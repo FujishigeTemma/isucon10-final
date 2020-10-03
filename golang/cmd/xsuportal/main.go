@@ -628,6 +628,9 @@ func (*ContestantService) ListNotifications(e echo.Context) error {
 	}
 	defer tx.Rollback()
 	contestant, _ := getCurrentContestant(e, tx, false)
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit tx: %w", err)
+	}
 
 	var notifications []*xsuportal.Notification
 	if afterStr != "" {
@@ -635,7 +638,7 @@ func (*ContestantService) ListNotifications(e echo.Context) error {
 		if err != nil {
 			return fmt.Errorf("parse after: %w", err)
 		}
-		err = tx.Select(
+		err = db.Select(
 			&notifications,
 			"SELECT * FROM `notifications` WHERE `contestant_id` = ? AND `id` > ? ORDER BY `id`",
 			contestant.ID,
@@ -645,7 +648,7 @@ func (*ContestantService) ListNotifications(e echo.Context) error {
 			return fmt.Errorf("select notifications(after=%v): %w", after, err)
 		}
 	} else {
-		err = tx.Select(
+		err := db.Select(
 			&notifications,
 			"SELECT * FROM `notifications` WHERE `contestant_id` = ? ORDER BY `id`",
 			contestant.ID,
@@ -654,7 +657,7 @@ func (*ContestantService) ListNotifications(e echo.Context) error {
 			return fmt.Errorf("select notifications: %w", err)
 		}
 	}
-	_, err = tx.Exec(
+	_, err = db.Exec(
 		"UPDATE `notifications` SET `read` = TRUE WHERE `contestant_id` = ? AND `read` = FALSE",
 		contestant.ID,
 	)
