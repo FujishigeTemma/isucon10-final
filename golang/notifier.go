@@ -68,6 +68,7 @@ func SendWebPush(vapidPrivateKey, vapidPublicKey string, notificationPB *resourc
 	if err != nil {
 		return fmt.Errorf("marshal notification: %w", err)
 	}
+	fmt.Println("send webpush")
 	message := make([]byte, base64.StdEncoding.EncodedLen(len(b)))
 	base64.StdEncoding.Encode(message, b)
 
@@ -143,7 +144,7 @@ func getTargetsMapFromIDs(db sqlx.Ext, ids []string) (map[string]PushSubscriptio
 	inQuery, inArgs, err := sqlx.In("SELECT * FROM `push_subscriptions` WHERE `contestant_id` IN (?)", ids)
 	if err != nil {
 		fmt.Println("error in constructing query in getTargetsFromIDs")
-		fmt.Errorf("%#v", err)
+		fmt.Printf("%#v", err)
 		return nil, err
 	}
 	targetInfos := []PushSubscription{}
