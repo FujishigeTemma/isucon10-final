@@ -28,7 +28,7 @@ func GetDB() (*sqlx.DB, error) {
 	}
 
 	dbx.SetMaxIdleConns(1024) // デフォルトだと2
-	dbx.SetConnMaxLifetime(10) // 一応セット
+	dbx.SetConnMaxLifetime(0) // 一応セット
 	dbx.SetConnMaxIdleTime(0) // 一応セット go1.15以上
 
 	return dbx, nil
