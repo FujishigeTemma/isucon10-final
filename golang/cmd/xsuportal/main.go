@@ -1452,12 +1452,11 @@ func makeLeaderboardPB(e echo.Context, teamID int64) (*resourcespb.Leaderboard, 
 
 	isSame := teamID == 0 || contestFinished || contestFreezesAt.Before(time.Now())
 
-	if isSame {
+	// audienceではcacheが使える
+	if teamID == 0 {
 		if c, expiration, ok := cacheStore.GetWithExpiration(AudienceDashBoardCacheKey); ok {
-			if teamID == 0 {
-				// 残り時間はブラウザ側でキャッシュ
-				e.Response().Header().Set("Expires", expiration.Format(http.TimeFormat))
-			}
+			// 残り時間はブラウザ側でキャッシュ
+			e.Response().Header().Set("Expires", expiration.Format(http.TimeFormat))
 
 			return c.(*resourcespb.Leaderboard), nil
 		}
