@@ -1704,7 +1704,9 @@ func makeLeaderboardPB(e echo.Context, teamID int64) (*resourcespb.Leaderboard, 
 
 	if isSame && err == nil {
 		// TODO: sync.Poolでbyte使いまわす
-		res, _ := proto.Marshal(pb)
+		res, _ := proto.Marshal(&audiencepb.DashboardResponse{
+			Leaderboard: pb,
+		})
 		cacheStore.Set(AudienceDashBoardCacheKey, res, 0)
 	}
 
