@@ -81,8 +81,6 @@ func main() {
 	xsuportal.WaitDB(db)
 	go xsuportal.PollDB(db)
 
-	notifier = xsuportal.Notifier{}
-
 	// TODO: LoggerとRecover後で外す
 	srv.Use(middleware.Logger())
 	srv.Use(middleware.Recover())
@@ -660,6 +658,9 @@ func (*ContestantService) ListNotifications(e echo.Context) error {
 	if err != nil {
 		return fmt.Errorf("update notifications: %w", err)
 	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit tx: %w", err)
+	}
 	team, _ := getCurrentTeam(e, db, false)
 
 	var lastAnsweredClarificationID int64
@@ -688,7 +689,6 @@ func (*ContestantService) SubscribeNotification(e echo.Context) error {
 	}
 
 	if notifier.VAPIDKey() == nil {
-		fmt.Println("not exist VAPIDKey")
 		return halt(e, http.StatusServiceUnavailable, "WebPush は未対応です", nil)
 	}
 
