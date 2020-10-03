@@ -604,13 +604,11 @@ func (*ContestantService) Dashboard(e echo.Context) error {
 	}
 	// TODO: 中でgetCurrentContestantが呼ばれる
 	team, _ := getCurrentTeam(e, db, false)
-	leaderboard, err := makeLeaderboardPB(e, team.ID)
+	res, err := makeLeaderboardPB(e, team.ID)
 	if err != nil {
 		return fmt.Errorf("make leaderboard: %w", err)
 	}
-	return writeProto(e, http.StatusOK, &contestantpb.DashboardResponse{
-		Leaderboard: leaderboard,
-	})
+	return e.Blob(http.StatusOK, "application/vnd.google.protobuf", res)
 }
 
 func (*ContestantService) ListNotifications(e echo.Context) error {
@@ -1195,7 +1193,7 @@ func (*AudienceService) Dashboard(e echo.Context) error {
 		return e.Blob(http.StatusOK, "application/vnd.google.protobuf", c.([]byte))
 	}
 
-	leaderboard, err := makeLeaderboardPB(e, 0)
+	res, err := makeLeaderboardPB(e, 0)
 	if err != nil {
 		return fmt.Errorf("make leaderboard: %w", err)
 	}
@@ -1204,9 +1202,7 @@ func (*AudienceService) Dashboard(e echo.Context) error {
 	e.Response().Header().Set("Cache-Control", "max-age=1, public")
 	e.Response().Header().Set("Expires", time.Now().Add(1*time.Second).Format(http.TimeFormat))
 
-	return writeProto(e, http.StatusOK, &audiencepb.DashboardResponse{
-		Leaderboard: leaderboard,
-	})
+	return e.Blob(http.StatusOK, "application/vnd.google.protobuf", res)
 }
 
 type XsuportalContext struct {
@@ -1451,7 +1447,7 @@ func makeContestPB(e echo.Context) (*resourcespb.Contest, error) {
 	}, nil
 }
 
-func makeLeaderboardPB(e echo.Context, teamID int64) (*resourcespb.Leaderboard, error) {
+func makeLeaderboardPB(e echo.Context, teamID int64) ([]byte, error) {
 	contestStatus, err := getCurrentContestStatus(e, db)
 	if err != nil {
 		return nil, fmt.Errorf("get current contest status: %w", err)
@@ -1702,15 +1698,19 @@ func makeLeaderboardPB(e echo.Context, teamID int64) (*resourcespb.Leaderboard, 
 	})
 	pb := v.(*resourcespb.Leaderboard)
 
-	if isSame && err == nil {
-		// TODO: sync.Poolでbyte使いまわす
-		res, _ := proto.Marshal(&audiencepb.DashboardResponse{
-			Leaderboard: pb,
-		})
-		cacheStore.Set(AudienceDashBoardCacheKey, res, 0)
+	if err != nil {
+		return nil, err
 	}
 
-	return pb, err
+	// TODO: sync.Poolでbyte使いまわす
+	res, _ := proto.Marshal(&audiencepb.DashboardResponse{
+		Leaderboard: pb,
+	})
+
+	if isSame && err == nil {
+		cacheStore.Set(AudienceDashBoardCacheKey, res, 0)
+	}
+	return res, err
 }
 
 func makeBenchmarkJobPB(job *xsuportal.BenchmarkJob) *resourcespb.BenchmarkJob {
