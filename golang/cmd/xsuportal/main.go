@@ -1615,7 +1615,7 @@ func makeLeaderboardPB(e echo.Context, teamID int64) (*resourcespb.Leaderboard, 
 			Team:        t,
 			FinishCount: team.FinishCount.Int64,
 		}
-		if team.Student.Valid && team.Student.Bool {
+		if team.Student {
 			pb.StudentTeams = append(pb.StudentTeams, item)
 		} else {
 			pb.GeneralTeams = append(pb.GeneralTeams, item)
