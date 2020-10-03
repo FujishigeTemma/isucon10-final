@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io/ioutil"
 	"sync"
-	"time"
 
 	"github.com/SherClockHolmes/webpush-go"
 	"github.com/golang/protobuf/proto"
@@ -249,13 +248,16 @@ func (n *Notifier) notify(db sqlx.Ext, notificationPB *resources.Notification, c
 		return nil, fmt.Errorf("insert notification: %w", err)
 	}
 	lastInsertID, _ := res.LastInsertId()
-	notification := Notification{
-		ID: lastInsertID,
-		ContestantID: contestantID,
-		EncodedMessage: encodedMessage,
-		Read: false,
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
+	// notification := Notification{}
+	var notification Notification
+	err = sqlx.Get(
+		db,
+		&notification,
+		"SELECT * FROM `notifications` WHERE `id` = ? LIMIT 1",
+		lastInsertID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("get inserted notification: %w", err)
 	}
 	return &notification, nil
 }
