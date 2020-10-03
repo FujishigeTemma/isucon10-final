@@ -7,6 +7,7 @@ import (
 	"encoding/pem"
 	"fmt"
 	"io/ioutil"
+	"strings"
 	"sync"
 
 	"github.com/SherClockHolmes/webpush-go"
@@ -100,7 +101,7 @@ func getTargetsMapFromIDs(db sqlx.Ext, ids []string) (map[string]PushSubscriptio
 	inQuery, inArgs, err := sqlx.In("SELECT * FROM `push_subscriptions` WHERE `contestant_id` IN (?)", ids)
 	if err != nil {
 		fmt.Println("error in constructing query in getTargetsFromIDs")
-		fmt.Printf("%#v", err)
+		fmt.Printf("%%v", err)
 		return nil, err
 	}
 	targetInfos := []PushSubscription{}
@@ -176,7 +177,6 @@ func (n *Notifier) NotifyClarificationAnswered(db sqlx.Ext, c *Clarification, up
 				fmt.Println("exist not subscribe user")
 				return fmt.Errorf("not subscribe")
 			}
-			fmt.Println("send webpush")
 			SendWebPush(n.options.VAPIDPrivateKey, n.options.VAPIDPublicKey, notificationPB, &info)
 		}
 	}
@@ -198,12 +198,27 @@ func (n *Notifier) NotifyBenchmarkJobFinished(db sqlx.Ext, job *BenchmarkJob) er
 		return fmt.Errorf("select contestants(team_id=%v): %w", job.TeamID, err)
 	}
 	ids := []string{}
+	nPBs := []*resources.Notification{}
 	for _, c := range contestants {
 		ids = append(ids, c.ID)
+		notificationPB := &resources.Notification{
+			Content: &resources.Notification_ContentBenchmarkJob{
+				ContentBenchmarkJob: &resources.Notification_BenchmarkJobMessage{
+					BenchmarkJobId: job.ID,
+				},
+			},
+		}
+		nPBs = append(nPBs, notificationPB)
 	}
 	// TODO: JOINでとれる
 	infoMap, err := getTargetsMapFromIDs(db, ids)
 	if err != nil {
+		return err
+	}
+	nMap, err := n.multiNotify(db, nPBs, ids)
+	if err != nil {
+		fmt.Println("bulk insert multiNotify")
+		fmt.Println(err)
 		return err
 	}
 	for _, contestant := range contestants {
@@ -214,18 +229,23 @@ func (n *Notifier) NotifyBenchmarkJobFinished(db sqlx.Ext, job *BenchmarkJob) er
 				},
 			},
 		}
-		notification, err := n.notify(db, notificationPB, contestant.ID)
-		if err != nil {
-			return fmt.Errorf("notify: %w", err)
-		}
+		// notification, err := n.notify(db, notificationPB, contestant.ID)
+		// if err != nil {
+		// 	return fmt.Errorf("notify: %w", err)
+		// }
 		if n.options != nil {
-			notificationPB.Id = notification.ID
-			notificationPB.CreatedAt = timestamppb.New(notification.CreatedAt)
 			info, exist := infoMap[contestant.ID]
 			if !exist {
 				fmt.Println("exist not subscribe user")
 				return fmt.Errorf("not subscribe")
 			}
+			notification, exist := nMap[contestant.ID]
+			if !exist {
+				fmt.Println("exist not bulkinsert user")
+				return fmt.Errorf("not inserted")
+			}
+			notificationPB.Id = notification.ID
+			notificationPB.CreatedAt = timestamppb.New(notification.CreatedAt)
 			SendWebPush(n.options.VAPIDPrivateKey, n.options.VAPIDPublicKey, notificationPB, &info)
 		}
 	}
@@ -259,4 +279,47 @@ func (n *Notifier) notify(db sqlx.Ext, notificationPB *resources.Notification, c
 		return nil, fmt.Errorf("get inserted notification: %w", err)
 	}
 	return &notification, nil
+}
+
+func (n *Notifier) multiNotify(db sqlx.Ext, notificationPBs []*resources.Notification, contestantIDs []string) (map[string]Notification, error) {
+	if len(notificationPBs) != len(contestantIDs) {
+		return nil, fmt.Errorf("invalid len")
+	}
+	query := strings.Builder{}
+
+	query.WriteString("INSERT INTO `notifications` (`contestant_id`, `encoded_message`, `read`, `created_at`, `updated_at`) VALUES ")
+	for i := 0; i < len(notificationPBs); i++ {
+		m, err := proto.Marshal(notificationPBs[i])
+		if err != nil {
+			return nil, fmt.Errorf("marshal notification: %w", err)
+		}
+		encodedMessage := base64.StdEncoding.EncodeToString(m)
+		cID := contestantIDs[i]
+		if i != len(notificationPBs) - 1 {
+			query.WriteString(fmt.Sprintf("(%v, %v, FALSE, NOW(6), NOW(6)), ", cID, encodedMessage))
+		} else {
+			query.WriteString(fmt.Sprintf("(%v, %v, FALSE, NOW(6), NOW(6)) ", cID, encodedMessage))
+		}
+	}
+
+	res, err := db.Exec(query.String())
+	if err != nil {
+		return nil, fmt.Errorf("insert notification: %w", err)
+	}
+	lID, _ := res.LastInsertId()
+	var notifications []*Notification
+	err = sqlx.Select(
+		db,
+		&notifications,
+		"SELECT * FROM `notifications` WHERE `id` < ? AND `id` > ?",
+		lID + 1, lID - int64(len(contestantIDs)),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("get inserted notification: %w", err)
+	}
+	ret := map[string]Notification{}
+	for _, n := range notifications {
+		ret[n.ContestantID] = *n
+	}
+	return ret, nil
 }
