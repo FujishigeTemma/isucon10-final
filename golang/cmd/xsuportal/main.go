@@ -28,7 +28,6 @@ import (
 
 	xsuportal "github.com/isucon/isucon10-final/webapp/golang"
 	xsuportalpb "github.com/isucon/isucon10-final/webapp/golang/proto/xsuportal"
-	"github.com/isucon/isucon10-final/webapp/golang/proto/xsuportal/resources"
 	resourcespb "github.com/isucon/isucon10-final/webapp/golang/proto/xsuportal/resources"
 	adminpb "github.com/isucon/isucon10-final/webapp/golang/proto/xsuportal/services/admin"
 	audiencepb "github.com/isucon/isucon10-final/webapp/golang/proto/xsuportal/services/audience"
@@ -1189,25 +1188,12 @@ func (*AudienceService) ListTeams(e echo.Context) error {
 // INFO: データの更新から最大 1 秒古い情報を返すことができます。ただし、ベンチマーカーが検知しない限りはそれより古い情報を返しても構いません。
 // INFO: 2 秒以内にレスポンスを返す必要があります。
 func (*AudienceService) Dashboard(e echo.Context) error {
-	if c, expiration, ok := cacheStore.GetWithExpiration(AudienceDashBoardCacheKey); ok {
-		// 残り時間はブラウザ側でキャッシュ
-		e.Response().Header().Set("Expires", expiration.Format(http.TimeFormat))
-
-		return writeProto(e, http.StatusOK, &audiencepb.DashboardResponse{
-			Leaderboard: c.(*resources.Leaderboard),
-		})
-	}
-
 	leaderboard, err := makeLeaderboardPB(e, 0)
 	if err != nil {
 		return fmt.Errorf("make leaderboard: %w", err)
 	}
 
 	cacheStore.Set(AudienceDashBoardCacheKey, leaderboard, 0)
-
-	// 1秒はブラウザ側でキャッシュ
-	e.Response().Header().Set("Cache-Control", "max-age=1, public")
-	e.Response().Header().Set("Expires", time.Now().Add(1*time.Second).Format(http.TimeFormat))
 
 	return writeProto(e, http.StatusOK, &audiencepb.DashboardResponse{
 		Leaderboard: leaderboard,
@@ -1464,7 +1450,18 @@ func makeLeaderboardPB(e echo.Context, teamID int64) (*resourcespb.Leaderboard, 
 	contestFinished := contestStatus.Status == resourcespb.Contest_FINISHED
 	contestFreezesAt := contestStatus.ContestFreezesAt
 
-	isSame := contestFinished || contestFreezesAt.Before(time.Now())
+	isSame := teamID == 0 || contestFinished || contestFreezesAt.Before(time.Now())
+
+	if isSame {
+		if c, expiration, ok := cacheStore.GetWithExpiration(AudienceDashBoardCacheKey); ok {
+			if teamID == 0 {
+				// 残り時間はブラウザ側でキャッシュ
+				e.Response().Header().Set("Expires", expiration.Format(http.TimeFormat))
+			}
+
+			return c.(*resourcespb.Leaderboard), nil
+		}
+	}
 
 	name := strconv.FormatBool(contestFinished) + contestFreezesAt.Format(time.Stamp)
 	if !isSame {
@@ -1705,8 +1702,19 @@ func makeLeaderboardPB(e echo.Context, teamID int64) (*resourcespb.Leaderboard, 
 		}
 		return pb, nil
 	})
+	pb := v.(*resourcespb.Leaderboard)
 
-	return v.(*resourcespb.Leaderboard), err
+	if isSame && err == nil {
+		cacheStore.Set(AudienceDashBoardCacheKey, pb, 0)
+
+		if teamID == 0 {
+			// 1秒はブラウザ側でキャッシュ
+			e.Response().Header().Set("Cache-Control", "max-age=1, public")
+			e.Response().Header().Set("Expires", time.Now().Add(1*time.Second).Format(http.TimeFormat))
+		}
+	}
+
+	return pb, err
 }
 
 func makeBenchmarkJobPB(job *xsuportal.BenchmarkJob) *resourcespb.BenchmarkJob {
