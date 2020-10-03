@@ -157,6 +157,8 @@ func run() error {
 		contestantID        string
 		vapidPrivateKeyPath string
 	}
+	// 引数読んでる
+	// contestant id だけあげてkeyは最初から上げたらいい
 	flag.StringVar(&flags.contestantID, "c", "", "contestant id (required)")
 	flag.StringVar(&flags.vapidPrivateKeyPath, "i", "", "VAPID private key path (required)")
 	flag.Parse()
