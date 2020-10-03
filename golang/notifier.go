@@ -147,12 +147,29 @@ func (n *Notifier) NotifyClarificationAnswered(db sqlx.Ext, c *Clarification, up
 	}
 
 	ids := []string{}
-	for _, c := range contestants {
-		ids = append(ids, c.ID)
+	nPBs := []*resources.Notification{}
+	for _, contestant := range contestants {
+		ids = append(ids, contestant.ID)
+		notificationPB := &resources.Notification{
+			Content: &resources.Notification_ContentClarification{
+				ContentClarification: &resources.Notification_ClarificationMessage{
+					ClarificationId: c.ID,
+					Owned:           c.TeamID == contestant.TeamID,
+					Updated:         updated,
+				},
+			},
+		}
+		nPBs = append(nPBs, notificationPB)
 	}
 	// TODO: JOINでとれる
 	infoMap, err := getTargetsMapFromIDs(db, ids)
 	if err != nil {
+		return err
+	}
+	nMap, err := n.multiNotify(db, nPBs, ids)
+	if err != nil {
+		fmt.Println("bulk insert multiNotify")
+		fmt.Println(err)
 		return err
 	}
 	for _, contestant := range contestants {
@@ -165,18 +182,19 @@ func (n *Notifier) NotifyClarificationAnswered(db sqlx.Ext, c *Clarification, up
 				},
 			},
 		}
-		notification, err := n.notify(db, notificationPB, contestant.ID)
-		if err != nil {
-			return fmt.Errorf("notify: %w", err)
-		}
 		if n.options != nil {
-			notificationPB.Id = notification.ID
-			notificationPB.CreatedAt = timestamppb.New(notification.CreatedAt)
 			info, exist := infoMap[contestant.ID]
 			if !exist {
 				fmt.Println("exist not subscribe user")
 				return fmt.Errorf("not subscribe")
 			}
+			notification, exist := nMap[contestant.ID]
+			if !exist {
+				fmt.Println("exist not bulkinsert user")
+				return fmt.Errorf("not inserted")
+			}
+			notificationPB.Id = notification.ID
+			notificationPB.CreatedAt = timestamppb.New(notification.CreatedAt)
 			SendWebPush(n.options.VAPIDPrivateKey, n.options.VAPIDPublicKey, notificationPB, &info)
 		}
 	}
@@ -229,10 +247,6 @@ func (n *Notifier) NotifyBenchmarkJobFinished(db sqlx.Ext, job *BenchmarkJob) er
 				},
 			},
 		}
-		// notification, err := n.notify(db, notificationPB, contestant.ID)
-		// if err != nil {
-		// 	return fmt.Errorf("notify: %w", err)
-		// }
 		if n.options != nil {
 			info, exist := infoMap[contestant.ID]
 			if !exist {
