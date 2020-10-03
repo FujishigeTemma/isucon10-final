@@ -36,6 +36,8 @@ CREATE TABLE `benchmark_jobs` (
   `finished_at` DATETIME(6),
   `created_at` DATETIME(6) NOT NULL,
   `updated_at` DATETIME(6) NOT NULL,
+  INDEX idx_team_id (`team_id`),
+  INDEX idx_finished_at (`finished_at`),
   INDEX idx_created_at (`created_at`)
 ) ENGINE=InnoDB DEFAULT CHARACTER SET=utf8mb4;
 
