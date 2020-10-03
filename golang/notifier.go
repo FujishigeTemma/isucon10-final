@@ -58,38 +58,11 @@ func (n *Notifier) VAPIDKey() *webpush.Options {
 	return n.options
 }
 
-// testのメッセージを作ってる。randのシードは多分ここで使ってるだけ
-// func MakeTestNotificationPB() *resources.Notification {
-// 	return &resources.Notification{
-// 		CreatedAt: timestamppb.New(time.Now().UTC()),
-// 		Content: &resources.Notification_ContentTest{
-// 			ContentTest: &resources.Notification_TestMessage{
-// 				Something: 1000,
-// 			},
-// 		},
-// 	}
-// }
-
-func GetPushSubscriptions(db sqlx.Queryer, contestantID string) ([]PushSubscription, error) {
-	var subscriptions []PushSubscription
-	_ = sqlx.Select(
-		db,
-		&subscriptions,
-		"SELECT * FROM `push_subscriptions` WHERE `contestant_id` = ?",
-		contestantID,
-	)
-	// if err != sql.ErrNoRows && err != nil {
-	// 	return nil, fmt.Errorf("select push subscriptions: %w", err)
-	// }
-	return subscriptions, nil
-}
-
 func SendWebPush(vapidPrivateKey, vapidPublicKey string, notificationPB *resources.Notification, pushSubscription *PushSubscription) error {
 	b, err := proto.Marshal(notificationPB)
 	if err != nil {
 		return fmt.Errorf("marshal notification: %w", err)
 	}
-	fmt.Println("send webpush")
 	message := make([]byte, base64.StdEncoding.EncodedLen(len(b)))
 	base64.StdEncoding.Encode(message, b)
 
@@ -122,44 +95,6 @@ func SendWebPush(vapidPrivateKey, vapidPublicKey string, notificationPB *resourc
 	}
 	return nil
 }
-
-// func run(contestantID string) error {
-// 	subscriptions, err := GetPushSubscriptions(db, contestantID)
-// 	if err != nil {
-// 		return fmt.Errorf("get push subscrptions: %w", err)
-// 	}
-// 	if len(subscriptions) == 0 {
-// 		return fmt.Errorf("no push subscriptions found: contestant_id=%v", contestantID)
-// 	}
-
-// 	notificationPB := MakeTestNotificationPB()
-// 	notification, err := InsertNotification(db, notificationPB, contestantID)
-// 	if err != nil {
-// 		return fmt.Errorf("insert notification: %w", err)
-// 	}
-// 	notificationPB.Id = notification.ID
-// 	notificationPB.CreatedAt = timestamppb.New(notification.CreatedAt)
-
-// 	jsonBytes, err := json.Marshal(notificationPB)
-// 	if err != nil {
-// 		return fmt.Errorf("notification to json: %w", err)
-// 	}
-// 	fmt.Printf("Notification=%v\n", string(jsonBytes))
-
-// 	for _, subscription := range subscriptions {
-// 		jsonBytes, err := json.Marshal(subscription)
-// 		if err != nil {
-// 			return fmt.Errorf("subscription to json: %w", err)
-// 		}
-// 		fmt.Printf("Sending web push: push_subscription=%v\n", string(jsonBytes))
-// 		err = SendWebPush(vapidKey, notificationPB, &subscription)
-// 		if err != nil {
-// 			return fmt.Errorf("send webpush: %w", err)
-// 		}
-// 	}
-// 	fmt.Println("Finished")
-// 	return nil
-// }
 
 func getTargetsMapFromIDs(db sqlx.Ext, ids []string) (map[string]PushSubscription, error) {
 	inQuery, inArgs, err := sqlx.In("SELECT * FROM `push_subscriptions` WHERE `contestant_id` IN (?)", ids)

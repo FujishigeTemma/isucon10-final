@@ -860,7 +860,6 @@ func (*ContestantService) ListNotifications(e echo.Context) error {
 }
 
 func (*ContestantService) SubscribeNotification(e echo.Context) error {
-	fmt.Println("post subscribe")
 	// TODO: 中でgetCurrentContestantが呼ばれる
 	if ok, err := loginRequired(e, db, &loginRequiredOption{Team: true}); !ok {
 		return wrapError("check session", err)
@@ -875,7 +874,6 @@ func (*ContestantService) SubscribeNotification(e echo.Context) error {
 	if err := e.Bind(&req); err != nil {
 		return err
 	}
-	fmt.Println("subscribe")
 	contestant, _ := getCurrentContestant(e, db, false)
 	_, err := db.Exec(
 		"INSERT INTO `push_subscriptions` (`contestant_id`, `endpoint`, `p256dh`, `auth`, `created_at`, `updated_at`) VALUES (?, ?, ?, ?, NOW(6), NOW(6))",
