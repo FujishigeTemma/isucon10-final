@@ -640,7 +640,7 @@ func (*ContestantService) ListNotifications(e echo.Context) error {
 	} else {
 		notifications = notifier.ReadNotification(-1, contestant.ID)
 	}
-	fmt.Printf("Get list finish: %v\n", time.Now().Before(start))
+	fmt.Printf("Get list finish: %v\n", time.Now().Sub(start))
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit tx: %w", err)
 	}
