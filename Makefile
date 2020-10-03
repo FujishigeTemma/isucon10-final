@@ -79,7 +79,7 @@ stash-log:
 	@$(eval when := $(shell date "+%s"))
 	@mkdir -p ~/logs/$(when)
 	@if [ -f $(MYSQL_LOG) ]; then \
-		sudo rm $(MYSQL_LOG) ; \
+		sudo mv -f $(MYSQL_LOG) ~/logs/$(when)/ ; \
 	fi
 	@sudo systemctl restart mysql
 	# @if [ -f $(NGX_LOG) ]; then \
