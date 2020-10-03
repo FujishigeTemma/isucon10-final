@@ -739,7 +739,7 @@ func (*ContestantService) UnsubscribeNotification(e echo.Context) error {
 		return err
 	}
 
-	_, err := db.Exec(
+	_, err = db.Exec(
 		"DELETE FROM `push_subscriptions` WHERE `contestant_id` = ? AND `endpoint` = ? LIMIT 1",
 		contestant.ID,
 		req.Endpoint,
