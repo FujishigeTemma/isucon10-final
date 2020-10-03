@@ -182,6 +182,12 @@ func main() {
 	xsuportal.WaitDB(db)
 	go xsuportal.PollDB(db)
 
+	var defaultContestants []xsuportal.Contestant
+	db.Select(&defaultContestants, "SELECT * FROM `contestants`")
+	for _, contestant := range defaultContestants {
+		contestantCache.Set(contestant.ID, contestant)
+	}
+
 	// TODO: LoggerとRecover後で外す
 	srv.Use(middleware.Logger())
 	srv.Use(middleware.Recover())
