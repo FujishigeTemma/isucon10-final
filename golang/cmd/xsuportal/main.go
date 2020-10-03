@@ -900,9 +900,10 @@ func (*ContestantService) Signup(e echo.Context) error {
 	password := hex.EncodeToString(hash[:])
 	time := time.Now().Truncate(time.Millisecond) // TODO: ここ不安
 	_, err := db.Exec(
-		"INSERT INTO `contestants` (`id`, `password`, `staff`, `created_at`) VALUES (?, ?, FALSE, time)",
+		"INSERT INTO `contestants` (`id`, `password`, `staff`, `created_at`) VALUES (?, ?, FALSE, ?)",
 		req.ContestantId,
 		password,
+		time,
 	)
 	if mErr, ok := err.(*mysql.MySQLError); ok && mErr.Number == MYSQL_ER_DUP_ENTRY {
 		return halt(e, http.StatusBadRequest, "IDが既に登録されています", nil)
