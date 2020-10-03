@@ -1203,8 +1203,6 @@ func (*AudienceService) Dashboard(e echo.Context) error {
 		return fmt.Errorf("make leaderboard: %w", err)
 	}
 
-	cacheStore.Set(AudienceDashBoardCacheKey, leaderboard, 0)
-
 	// 1秒はブラウザ側でキャッシュ
 	e.Response().Header().Set("Cache-Control", "max-age=1, public")
 	e.Response().Header().Set("Expires", time.Now().Add(1*time.Second).Format(http.TimeFormat))
@@ -1464,7 +1462,7 @@ func makeLeaderboardPB(e echo.Context, teamID int64) (*resourcespb.Leaderboard, 
 	contestFinished := contestStatus.Status == resourcespb.Contest_FINISHED
 	contestFreezesAt := contestStatus.ContestFreezesAt
 
-	isSame := contestFinished || contestFreezesAt.Before(time.Now())
+	isSame := teamID == 0 || contestFinished || contestFreezesAt.Before(time.Now())
 
 	name := strconv.FormatBool(contestFinished) + contestFreezesAt.Format(time.Stamp)
 	if !isSame {
@@ -1705,8 +1703,13 @@ func makeLeaderboardPB(e echo.Context, teamID int64) (*resourcespb.Leaderboard, 
 		}
 		return pb, nil
 	})
+	pb := v.(*resourcespb.Leaderboard)
 
-	return v.(*resourcespb.Leaderboard), err
+	if isSame && err == nil {
+		cacheStore.Set(AudienceDashBoardCacheKey, pb, 0)
+	}
+
+	return pb, err
 }
 
 func makeBenchmarkJobPB(job *xsuportal.BenchmarkJob) *resourcespb.BenchmarkJob {
