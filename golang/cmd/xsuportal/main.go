@@ -39,6 +39,7 @@ import (
 )
 
 const (
+	// TODO: これをあげることで負荷をあげられる、300でボーナス倍率が2倍になる
 	TeamCapacity               = 10
 	AdminID                    = "admin"
 	AdminPassword              = "admin"
@@ -402,6 +403,12 @@ func (*CommonService) GetCurrentSession(e echo.Context) error {
 
 type ContestantService struct{}
 
+/*
+	INFO:
+	仮想選手は、エンキューができる状況にあるときは即時にエンキューを試みます。以下のような状況にある場合は仮想選手はエンキューをせず、状況が変化するのを待ちます。
+	- まだ FINISHED になっていない所属仮想チームのジョブ（PENDING, SENT, RUNNING）がすでにあり、まだ仮想負荷走行終了の通知を受け取っていないとき
+	- 仮想選手本人あるいは所属仮想チームのメンバーが仮想運営への質問（Clarification）を投稿したあと、まだ仮想運営からの回答を確認していないとき
+*/
 func (*ContestantService) EnqueueBenchmarkJob(e echo.Context) error {
 	var req contestantpb.EnqueueBenchmarkJobRequest
 	if err := e.Bind(&req); err != nil {
@@ -580,6 +587,7 @@ func (*ContestantService) RequestClarification(e echo.Context) error {
 	})
 }
 
+// INFO: 2 秒以内にレスポンスを返す必要があります。
 func (*ContestantService) Dashboard(e echo.Context) error {
 	// TODO: 中でgetCurrentContestantが呼ばれる
 	if ok, err := loginRequired(e, db, &loginRequiredOption{Team: true}); !ok {
@@ -1168,6 +1176,8 @@ func (*AudienceService) ListTeams(e echo.Context) error {
 	return writeProto(e, http.StatusOK, res)
 }
 
+// INFO: データの更新から最大 1 秒古い情報を返すことができます。ただし、ベンチマーカーが検知しない限りはそれより古い情報を返しても構いません。
+// INFO: 2 秒以内にレスポンスを返す必要があります。
 func (*AudienceService) Dashboard(e echo.Context) error {
 	leaderboard, err := makeLeaderboardPB(e, 0)
 	if err != nil {
