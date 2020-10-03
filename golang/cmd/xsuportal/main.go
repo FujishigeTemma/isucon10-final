@@ -9,7 +9,6 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
-	"hash/fnv"
 	"io/ioutil"
 	"net/http"
 	"strconv"
@@ -54,7 +53,7 @@ const (
 
 	AudienceDashBoardCacheKey = "audience_dashboard"
 
-	ContestantCacheMapShards  = 32
+	ContestantCacheMapShards = 32
 )
 
 var db *sqlx.DB
@@ -64,15 +63,19 @@ var dashboardGroup singleflight.Group
 var contestantCache = NewContestantCacheMap()
 
 type ContestantCacheMapShard struct {
-	contestants map[int64]xsuportal.Contestant
+	contestants map[uint32]xsuportal.Contestant
 	sync.RWMutex
 }
 type ContestantCacheMap []*ContestantCacheMapShard
 
-func hash(s string) int64 {
-	h := fnv.New64()
-	h.Write([]byte(s))
-	return int64(h.Sum64())
+func hash(key string) uint32 {
+	hash := uint32(2166136261)
+	const prime32 = uint32(16777619)
+	for i := 0; i < len(key); i++ {
+		hash *= prime32
+		hash ^= uint32(key[i])
+	}
+	return hash
 }
 
 func NewContestantCacheMap() ContestantCacheMap {
@@ -84,7 +87,7 @@ func NewContestantCacheMap() ContestantCacheMap {
 	return m
 }
 func NewContestantCacheMapShard() ContestantCacheMapShard {
-	contestants := make(map[int64]xsuportal.Contestant, 50)
+	contestants := make(map[uint32]xsuportal.Contestant, 50)
 	return ContestantCacheMapShard{contestants: contestants}
 }
 
@@ -327,7 +330,7 @@ func (*AdminService) Initialize(e echo.Context) error {
 }
 
 func getTeams(teamIDs []int64) (map[int64]xsuportal.Team, error) {
-	sql, params, err  := sqlx.In(
+	sql, params, err := sqlx.In(
 		"SELECT * FROM `teams` WHERE `id` IN (?)",
 		teamIDs,
 	)
