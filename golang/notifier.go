@@ -296,9 +296,9 @@ func (n *Notifier) multiNotify(db sqlx.Ext, notificationPBs []*resources.Notific
 		encodedMessage := base64.StdEncoding.EncodeToString(m)
 		cID := contestantIDs[i]
 		if i != len(notificationPBs) - 1 {
-			query.WriteString(fmt.Sprintf("(%v, %v, FALSE, NOW(6), NOW(6)), ", cID, encodedMessage))
+			query.WriteString(fmt.Sprintf("(\"%v\", \"%v\", FALSE, NOW(6), NOW(6)), ", cID, encodedMessage))
 		} else {
-			query.WriteString(fmt.Sprintf("(%v, %v, FALSE, NOW(6), NOW(6)) ", cID, encodedMessage))
+			query.WriteString(fmt.Sprintf("(\"%v\", \"%v\", FALSE, NOW(6), NOW(6)) ", cID, encodedMessage))
 		}
 	}
 
