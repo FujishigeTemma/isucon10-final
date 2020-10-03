@@ -254,7 +254,7 @@ func pollBenchmarkJob(db sqlx.Queryer) (*xsuportal.BenchmarkJob, error) {
 	// TODO: ポーリングじゃない方法がとれないか検討
 	for i := 0; i < 10; i++ {
 		if i >= 1 {
-			time.Sleep(50 * time.Millisecond)
+			time.Sleep(30 * time.Millisecond)
 		}
 		var job xsuportal.BenchmarkJob
 		err := sqlx.Get(
