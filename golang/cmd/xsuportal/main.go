@@ -657,6 +657,9 @@ func (*ContestantService) ListNotifications(e echo.Context) error {
 		"UPDATE `notifications` SET `read` = TRUE WHERE `contestant_id` = ? AND `read` = FALSE",
 		contestant.ID,
 	)
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit tx: %w", err)
+	}
 	if err != nil {
 		return fmt.Errorf("update notifications: %w", err)
 	}
