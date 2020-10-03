@@ -35,7 +35,8 @@ CREATE TABLE `benchmark_jobs` (
   `started_at` DATETIME(6),
   `finished_at` DATETIME(6),
   `created_at` DATETIME(6) NOT NULL,
-  `updated_at` DATETIME(6) NOT NULL
+  `updated_at` DATETIME(6) NOT NULL,
+  INDEX idx_created_at (`created_at`)
 ) ENGINE=InnoDB DEFAULT CHARACTER SET=utf8mb4;
 
 ALTER TABLE `benchmark_jobs` ADD INDEX idx1 (`team_id`,`id`);
