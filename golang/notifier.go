@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"sync"
+	"time"
 
 	"github.com/SherClockHolmes/webpush-go"
 	"github.com/golang/protobuf/proto"
@@ -259,5 +260,6 @@ func (n *Notifier) notify(db sqlx.Ext, notificationPB *resources.Notification, c
 	if err != nil {
 		return nil, fmt.Errorf("get inserted notification: %w", err)
 	}
+	fmt.Printf("time: %v, now: %v\n", time.Now(), notification.CreatedAt)
 	return &notification, nil
 }
