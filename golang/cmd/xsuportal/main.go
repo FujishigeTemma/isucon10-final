@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
 	"database/sql"
@@ -9,7 +10,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io/ioutil"
-	"math/rand"
 	"net/http"
 	"strconv"
 	"strings"
@@ -28,6 +28,7 @@ import (
 
 	xsuportal "github.com/isucon/isucon10-final/webapp/golang"
 	xsuportalpb "github.com/isucon/isucon10-final/webapp/golang/proto/xsuportal"
+	"github.com/isucon/isucon10-final/webapp/golang/proto/xsuportal/resources"
 	resourcespb "github.com/isucon/isucon10-final/webapp/golang/proto/xsuportal/resources"
 	adminpb "github.com/isucon/isucon10-final/webapp/golang/proto/xsuportal/services/admin"
 	audiencepb "github.com/isucon/isucon10-final/webapp/golang/proto/xsuportal/services/audience"
@@ -51,8 +52,6 @@ const (
 	SessionName                = "xsucon_session"
 
 	AudienceDashBoardCacheKey  = "audience_dashboard"
-	vapidKeyPath							 = "~isucon/webapp/vapid_private.pem"
-	WebpushSubject = "xsuportal-debug@example.com"
 )
 
 var db *sqlx.DB
@@ -701,6 +700,7 @@ func (*ContestantService) SubscribeNotification(e echo.Context) error {
 	if err := e.Bind(&req); err != nil {
 		return err
 	}
+
 	contestant, _ := getCurrentContestant(e, db, false)
 	_, err := db.Exec(
 		"INSERT INTO `push_subscriptions` (`contestant_id`, `endpoint`, `p256dh`, `auth`, `created_at`, `updated_at`) VALUES (?, ?, ?, ?, NOW(6), NOW(6))",
