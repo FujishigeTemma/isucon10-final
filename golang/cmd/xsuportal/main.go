@@ -22,10 +22,12 @@ import (
 	"github.com/labstack/echo-contrib/session"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
+	"github.com/patrickmn/go-cache"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	xsuportal "github.com/isucon/isucon10-final/webapp/golang"
 	xsuportalpb "github.com/isucon/isucon10-final/webapp/golang/proto/xsuportal"
+	"github.com/isucon/isucon10-final/webapp/golang/proto/xsuportal/resources"
 	resourcespb "github.com/isucon/isucon10-final/webapp/golang/proto/xsuportal/resources"
 	adminpb "github.com/isucon/isucon10-final/webapp/golang/proto/xsuportal/services/admin"
 	audiencepb "github.com/isucon/isucon10-final/webapp/golang/proto/xsuportal/services/audience"
@@ -35,6 +37,7 @@ import (
 	"github.com/isucon/isucon10-final/webapp/golang/util"
 
 	_ "net/http/pprof"
+
 	"github.com/felixge/fgprof"
 )
 
@@ -46,10 +49,13 @@ const (
 	DebugContestStatusFilePath = "/tmp/XSUPORTAL_CONTEST_STATUS"
 	MYSQL_ER_DUP_ENTRY         = 1062
 	SessionName                = "xsucon_session"
+
+	AudienceDashBoardCacheKey  = "audience_dashboard"
 )
 
 var db *sqlx.DB
 var notifier xsuportal.Notifier
+var cacheStore = cache.New(900*time.Millisecond, 5*time.Minute)
 
 func main() {
 	http.DefaultServeMux.Handle("/debug/fgprof", fgprof.Handler())
@@ -1179,10 +1185,21 @@ func (*AudienceService) ListTeams(e echo.Context) error {
 // INFO: データの更新から最大 1 秒古い情報を返すことができます。ただし、ベンチマーカーが検知しない限りはそれより古い情報を返しても構いません。
 // INFO: 2 秒以内にレスポンスを返す必要があります。
 func (*AudienceService) Dashboard(e echo.Context) error {
+	if c, expiration, ok := cacheStore.GetWithExpiration(AudienceDashBoardCacheKey); ok {
+		// 残り時間はブラウザ側でキャッシュ
+		e.Response().Header().Set("Expires", expiration.Format(http.TimeFormat))
+
+		return writeProto(e, http.StatusOK, &audiencepb.DashboardResponse{
+			Leaderboard: c.(*resources.Leaderboard),
+		})
+	}
+
 	leaderboard, err := makeLeaderboardPB(e, 0)
 	if err != nil {
 		return fmt.Errorf("make leaderboard: %w", err)
 	}
+
+	cacheStore.Set(AudienceDashBoardCacheKey, leaderboard, 0)
 
 	// 1秒はブラウザ側でキャッシュ
 	e.Response().Header().Set("Cache-Control", "max-age=1, public")
