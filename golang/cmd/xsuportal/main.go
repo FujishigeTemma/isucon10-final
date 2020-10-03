@@ -43,7 +43,7 @@ import (
 
 const (
 	// TODO: これをあげることで負荷をあげられる、300でボーナス倍率が2倍になる
-	TeamCapacity               = 10
+	TeamCapacity               = 100
 	AdminID                    = "admin"
 	AdminPassword              = "admin"
 	DebugContestStatusFilePath = "/tmp/XSUPORTAL_CONTEST_STATUS"
