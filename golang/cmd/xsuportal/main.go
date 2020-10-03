@@ -1443,6 +1443,15 @@ func makeContestPB(e echo.Context) (*resourcespb.Contest, error) {
 }
 
 func makeLeaderboardPB(e echo.Context, teamID int64) (*resourcespb.Leaderboard, error) {
+	contestStatus, err := getCurrentContestStatus(e, db)
+	if err != nil {
+		return nil, fmt.Errorf("get current contest status: %w", err)
+	}
+	contestFinished := contestStatus.Status == resourcespb.Contest_FINISHED
+	contestFreezesAt := contestStatus.ContestFreezesAt
+
+	isSame := teamID == 0 || contestFinished || contestFreezesAt.Before(time.Now())
+
 	// audienceではcacheが使える
 	if teamID == 0 {
 		if c, expiration, ok := cacheStore.GetWithExpiration(AudienceDashBoardCacheKey); ok {
@@ -1452,15 +1461,6 @@ func makeLeaderboardPB(e echo.Context, teamID int64) (*resourcespb.Leaderboard, 
 			return c.(*resourcespb.Leaderboard), nil
 		}
 	}
-
-	contestStatus, err := getCurrentContestStatus(e, db)
-	if err != nil {
-		return nil, fmt.Errorf("get current contest status: %w", err)
-	}
-	contestFinished := contestStatus.Status == resourcespb.Contest_FINISHED
-	contestFreezesAt := contestStatus.ContestFreezesAt
-
-	isSame := teamID == 0 || contestFinished || contestFreezesAt.Before(time.Now())
 
 	name := strconv.FormatBool(contestFinished) + contestFreezesAt.Format(time.Stamp)
 	if !isSame {
