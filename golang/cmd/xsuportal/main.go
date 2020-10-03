@@ -56,8 +56,6 @@ var cacheStore = cache.New(900*time.Millisecond, 5*time.Minute)
 var dashboardGroup singleflight.Group
 
 func main() {
-	go http.ListenAndServe(":6060", nil)
-
 	srv := echo.New()
 	srv.Debug = util.GetEnv("DEBUG", "") != "" // TODO: 後で外す
 	srv.Server.Addr = fmt.Sprintf(":%v", util.GetEnv("PORT", "9292"))
