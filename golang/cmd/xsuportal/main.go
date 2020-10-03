@@ -1185,8 +1185,10 @@ func (*AudienceService) ListTeams(e echo.Context) error {
 // INFO: データの更新から最大 1 秒古い情報を返すことができます。ただし、ベンチマーカーが検知しない限りはそれより古い情報を返しても構いません。
 // INFO: 2 秒以内にレスポンスを返す必要があります。
 func (*AudienceService) Dashboard(e echo.Context) error {
-	// TODO: GetWithExpirationを使う
-	if c, ok := cacheStore.Get(AudienceDashBoardCacheKey); ok {
+	if c, expiration, ok := cacheStore.GetWithExpiration(AudienceDashBoardCacheKey); ok {
+		// 残り時間はブラウザ側でキャッシュ
+		e.Response().Header().Set("Expires", expiration.Format(http.TimeFormat))
+
 		return writeProto(e, http.StatusOK, &audiencepb.DashboardResponse{
 			Leaderboard: c.(*resources.Leaderboard),
 		})
