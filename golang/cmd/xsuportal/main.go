@@ -1193,9 +1193,7 @@ func (*AudienceService) Dashboard(e echo.Context) error {
 		// 残り時間はブラウザ側でキャッシュ
 		e.Response().Header().Set("Expires", expiration.Format(http.TimeFormat))
 
-		return writeProto(e, http.StatusOK, &audiencepb.DashboardResponse{
-			Leaderboard: c.(*resources.Leaderboard),
-		})
+		return e.Blob(http.StatusOK, "application/vnd.google.protobuf", c.([]byte))
 	}
 
 	leaderboard, err := makeLeaderboardPB(e, 0)
@@ -1706,7 +1704,9 @@ func makeLeaderboardPB(e echo.Context, teamID int64) (*resourcespb.Leaderboard, 
 	pb := v.(*resourcespb.Leaderboard)
 
 	if isSame && err == nil {
-		cacheStore.Set(AudienceDashBoardCacheKey, pb, 0)
+		// TODO: sync.Poolでbyte使いまわす
+		res, _ := proto.Marshal(pb)
+		cacheStore.Set(AudienceDashBoardCacheKey, res, 0)
 	}
 
 	return pb, err
