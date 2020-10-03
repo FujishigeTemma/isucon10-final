@@ -64,13 +64,6 @@ func main() {
 	srv.HideBanner = true
 
 	srv.Binder = ProtoBinder{}
-	// TODO: あとで外す
-	srv.HTTPErrorHandler = func(err error, c echo.Context) {
-		if !c.Response().Committed {
-			c.Logger().Error(c.Request().Method, " ", c.Request().URL.Path, " ", err)
-			_ = halt(c, http.StatusInternalServerError, "", err)
-		}
-	}
 
 	db, _ = xsuportal.GetDB()
 
@@ -128,6 +121,8 @@ func main() {
 	srv.POST("/api/signup", contestant.Signup)
 	srv.POST("/api/login", contestant.Login)
 	srv.POST("/api/logout", contestant.Logout)
+
+	srv.StartServer(srv.Server)
 }
 
 type ProtoBinder struct{}
