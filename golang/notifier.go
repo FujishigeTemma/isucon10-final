@@ -14,7 +14,6 @@ import (
 	"github.com/jmoiron/sqlx"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	xsuportal "github.com/isucon/isucon10-final/webapp/golang"
 	"github.com/isucon/isucon10-final/webapp/golang/proto/xsuportal/resources"
 )
 
@@ -69,36 +68,8 @@ func (n *Notifier) VAPIDKey() *webpush.Options {
 // 	}
 // }
 
-func InsertNotification(db sqlx.Ext, notificationPB *resources.Notification, contestantID string) (*xsuportal.Notification, error) {
-	b, err := proto.Marshal(notificationPB)
-	if err != nil {
-		return nil, fmt.Errorf("marshal notification: %w", err)
-	}
-	encodedMessage := base64.StdEncoding.EncodeToString(b)
-	res, err := db.Exec(
-		"INSERT INTO `notifications` (`contestant_id`, `encoded_message`, `read`, `created_at`, `updated_at`) VALUES (?, ?, FALSE, NOW(6), NOW(6))",
-		contestantID,
-		encodedMessage,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("insert notification: %w", err)
-	}
-	id, _ := res.LastInsertId()
-	var notification xsuportal.Notification
-	err = sqlx.Get(
-		db,
-		&notification,
-		"SELECT * FROM `notifications` WHERE `id` = ?",
-		id,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("get notification: %w", err)
-	}
-	return &notification, nil
-}
-
-func GetPushSubscriptions(db sqlx.Queryer, contestantID string) ([]xsuportal.PushSubscription, error) {
-	var subscriptions []xsuportal.PushSubscription
+func GetPushSubscriptions(db sqlx.Queryer, contestantID string) ([]PushSubscription, error) {
+	var subscriptions []PushSubscription
 	_ = sqlx.Select(
 		db,
 		&subscriptions,
@@ -111,7 +82,7 @@ func GetPushSubscriptions(db sqlx.Queryer, contestantID string) ([]xsuportal.Pus
 	return subscriptions, nil
 }
 
-func SendWebPush(vapidPrivateKey, vapidPublicKey string, notificationPB *resources.Notification, pushSubscription *xsuportal.PushSubscription) error {
+func SendWebPush(vapidPrivateKey, vapidPublicKey string, notificationPB *resources.Notification, pushSubscription *PushSubscription) error {
 	b, err := proto.Marshal(notificationPB)
 	if err != nil {
 		return fmt.Errorf("marshal notification: %w", err)
@@ -187,14 +158,14 @@ func SendWebPush(vapidPrivateKey, vapidPublicKey string, notificationPB *resourc
 // 	return nil
 // }
 
-func getTargetsFromIDs(db sqlx.Ext, ids []string) ([]xsuportal.PushSubscription, error) {
+func getTargetsMapFromIDs(db sqlx.Ext, ids []string) (map[string]PushSubscription, error) {
 	inQuery, inArgs, err := sqlx.In("SELECT * FROM `push_subscriptions` WHERE `contestant_id` IN (?)", ids)
 	if err != nil {
 		fmt.Println("error in constructing query in getTargetsFromIDs")
 		fmt.Errorf("%#v", err)
 		return nil, err
 	}
-	targetInfos := []xsuportal.PushSubscription{}
+	targetInfos := []PushSubscription{}
 	err = sqlx.Select(
 		db,
 		&targetInfos,
@@ -203,7 +174,11 @@ func getTargetsFromIDs(db sqlx.Ext, ids []string) ([]xsuportal.PushSubscription,
 	if err != nil {
 		return nil, fmt.Errorf("select all contestants: %w", err)
 	}
-	return targetInfos, nil
+	res := map[string]PushSubscription{}
+	for _, t := range targetInfos {
+		res[t.ContestantID] = t
+	}
+	return res, nil
 }
 
 func (n *Notifier) NotifyClarificationAnswered(db sqlx.Ext, c *Clarification, updated bool) error {
@@ -238,7 +213,7 @@ func (n *Notifier) NotifyClarificationAnswered(db sqlx.Ext, c *Clarification, up
 		ids = append(ids, c.ID)
 	}
 	// TODO: JOINでとれる
-	pushInfos, err := getTargetsFromIDs(db, ids)
+	infoMap, err := getTargetsMapFromIDs(db, ids)
 	if err != nil {
 		return err
 	}
@@ -259,8 +234,13 @@ func (n *Notifier) NotifyClarificationAnswered(db sqlx.Ext, c *Clarification, up
 		if option != nil {
 			notificationPB.Id = notification.ID
 			notificationPB.CreatedAt = timestamppb.New(notification.CreatedAt)
-			SendWebPush(option.VAPIDPrivateKey, option.VAPIDPublicKey, notificationPB, )
 			// TODO: Web Push IIKANJI NI SHITE
+			info, exist := infoMap[contestant.ID]
+			if !exist {
+				fmt.Println("exist not subscribe user")
+				return fmt.Errorf("not subscribe")
+			}
+			SendWebPush(option.VAPIDPrivateKey, option.VAPIDPublicKey, notificationPB, &info)
 		}
 	}
 	return nil
@@ -280,6 +260,16 @@ func (n *Notifier) NotifyBenchmarkJobFinished(db sqlx.Ext, job *BenchmarkJob) er
 	if err != nil {
 		return fmt.Errorf("select contestants(team_id=%v): %w", job.TeamID, err)
 	}
+	option := n.VAPIDKey()
+	ids := []string{}
+	for _, c := range contestants {
+		ids = append(ids, c.ID)
+	}
+	// TODO: JOINでとれる
+	infoMap, err := getTargetsMapFromIDs(db, ids)
+	if err != nil {
+		return err
+	}
 	for _, contestant := range contestants {
 		notificationPB := &resources.Notification{
 			Content: &resources.Notification_ContentBenchmarkJob{
@@ -292,10 +282,16 @@ func (n *Notifier) NotifyBenchmarkJobFinished(db sqlx.Ext, job *BenchmarkJob) er
 		if err != nil {
 			return fmt.Errorf("notify: %w", err)
 		}
-		if n.VAPIDKey() != nil {
+		if option != nil {
 			notificationPB.Id = notification.ID
 			notificationPB.CreatedAt = timestamppb.New(notification.CreatedAt)
 			// TODO: Web Push IIKANJI NI SHITE
+			info, exist := infoMap[contestant.ID]
+			if !exist {
+				fmt.Println("exist not subscribe user")
+				return fmt.Errorf("not subscribe")
+			}
+			SendWebPush(option.VAPIDPrivateKey, option.VAPIDPublicKey, notificationPB, &info)
 		}
 	}
 	return nil
