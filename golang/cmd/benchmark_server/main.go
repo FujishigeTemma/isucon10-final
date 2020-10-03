@@ -35,6 +35,7 @@ func (b *benchmarkQueueService) Svc() *bench.BenchmarkQueueService {
 
 func (b *benchmarkQueueService) ReceiveBenchmarkJob(ctx context.Context, req *bench.ReceiveBenchmarkJobRequest) (*bench.ReceiveBenchmarkJobResponse, error) {
 	var jobHandle *bench.ReceiveBenchmarkJobResponse_JobHandle
+	// TODO: 実質全件取得してる気がする、ただpollBenchmarkJobが50ms待ちしてるから考える必要あり
 	for {
 		next, err := func() (bool, error) {
 			tx, err := db.Beginx()
@@ -246,6 +247,7 @@ func (b *benchmarkReportService) saveAsRunning(db sqlx.Execer, job *xsuportal.Be
 }
 
 func pollBenchmarkJob(db sqlx.Queryer) (*xsuportal.BenchmarkJob, error) {
+	// TODO: ポーリングじゃない方法がとれないか検討
 	for i := 0; i < 10; i++ {
 		if i >= 1 {
 			time.Sleep(50 * time.Millisecond)
