@@ -206,6 +206,8 @@ func (*AdminService) Initialize(e echo.Context) error {
 		}
 	}
 
+	cacheStore.Flush()
+
 	host := util.GetEnv("BENCHMARK_SERVER_HOST", "localhost")
 	port, _ := strconv.Atoi(util.GetEnv("BENCHMARK_SERVER_PORT", "50051"))
 	res := &adminpb.InitializeResponse{
