@@ -28,7 +28,6 @@ import (
 
 	xsuportal "github.com/isucon/isucon10-final/webapp/golang"
 	xsuportalpb "github.com/isucon/isucon10-final/webapp/golang/proto/xsuportal"
-	"github.com/isucon/isucon10-final/webapp/golang/proto/xsuportal/resources"
 	resourcespb "github.com/isucon/isucon10-final/webapp/golang/proto/xsuportal/resources"
 	adminpb "github.com/isucon/isucon10-final/webapp/golang/proto/xsuportal/services/admin"
 	audiencepb "github.com/isucon/isucon10-final/webapp/golang/proto/xsuportal/services/audience"
