@@ -63,6 +63,9 @@ func main() {
 
 	db, _ = xsuportal.GetDB()
 
+	xsuportal.WaitDB(db)
+	go xsuportal.PollDB(db)
+
 	srv.Use(middleware.Logger())
 	srv.Use(middleware.Recover())
 	srv.Use(session.Middleware(sessions.NewCookieStore([]byte("tagomoris"))))

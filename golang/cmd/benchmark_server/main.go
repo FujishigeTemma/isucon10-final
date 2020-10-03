@@ -280,6 +280,9 @@ func main() {
 
 	db, _ = xsuportal.GetDB()
 
+	xsuportal.WaitDB(db)
+	go xsuportal.PollDB(db)
+
 	server := grpc.NewServer()
 
 	queue := &benchmarkQueueService{}

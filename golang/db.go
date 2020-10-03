@@ -3,6 +3,8 @@ package xsuportal
 import (
 	"github.com/go-sql-driver/mysql"
 	"github.com/jmoiron/sqlx"
+	"log"
+	"time"
 
 	"github.com/isucon/isucon10-final/webapp/golang/util"
 )
@@ -30,4 +32,28 @@ func GetDB() (*sqlx.DB, error) {
 	dbx.SetConnMaxIdleTime(0) // 一応セット go1.15以上
 
 	return dbx, nil
+}
+
+func WaitDB(db *sqlx.DB) {
+	for {
+		err := db.Ping()
+		if err == nil {
+			return
+		}
+
+		log.Printf("Failed to ping DB: %s", err)
+		log.Println("Retrying...")
+		time.Sleep(time.Second)
+	}
+}
+
+func PollDB(db *sqlx.DB) {
+	for {
+		err := db.Ping()
+		if err != nil {
+			log.Printf("Failed to ping DB: %s", err)
+		}
+
+		time.Sleep(time.Second)
+	}
 }
