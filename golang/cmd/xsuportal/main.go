@@ -220,16 +220,19 @@ func (*AdminService) Initialize(e echo.Context) error {
 }
 
 func (*AdminService) ListClarifications(e echo.Context) error {
-	// TODO: 中でgetCurrentContestantが呼ばれる
-	if ok, err := loginRequired(e, db, &loginRequiredOption{}); !ok {
+	contestant, err := getCurrentContestant(e, db, false)
+	if err != nil {
 		return wrapError("check session", err)
 	}
-	contestant, _ := getCurrentContestant(e, db, false)
+	if ok, err := loginRequiredByContestant(e, contestant, &loginRequiredOption{}); !ok {
+		return wrapError("check session", err)
+	}
+
 	if !contestant.Staff {
 		return halt(e, http.StatusForbidden, "管理者権限が必要です", nil)
 	}
 	var clarifications []xsuportal.Clarification
-	err := db.Select(&clarifications, "SELECT * FROM `clarifications` ORDER BY `updated_at` DESC")
+	err = db.Select(&clarifications, "SELECT * FROM `clarifications` ORDER BY `updated_at` DESC")
 	if err != sql.ErrNoRows && err != nil {
 		return fmt.Errorf("query clarifications: %w", err)
 	}
@@ -255,15 +258,18 @@ func (*AdminService) ListClarifications(e echo.Context) error {
 }
 
 func (*AdminService) GetClarification(e echo.Context) error {
-	// TODO: 中でgetCurrentContestantが呼ばれる
-	if ok, err := loginRequired(e, db, &loginRequiredOption{}); !ok {
+	contestant, err := getCurrentContestant(e, db, false)
+	if err != nil {
 		return wrapError("check session", err)
 	}
+	if ok, err := loginRequiredByContestant(e, contestant, &loginRequiredOption{}); !ok {
+		return wrapError("check session", err)
+	}
+
 	id, err := strconv.Atoi(e.Param("id"))
 	if err != nil {
 		return fmt.Errorf("parse id: %w", err)
 	}
-	contestant, _ := getCurrentContestant(e, db, false)
 	if !contestant.Staff {
 		return halt(e, http.StatusForbidden, "管理者権限が必要です", nil)
 	}
@@ -295,15 +301,18 @@ func (*AdminService) GetClarification(e echo.Context) error {
 }
 
 func (*AdminService) RespondClarification(e echo.Context) error {
-	// TODO: 中でgetCurrentContestantが呼ばれる
-	if ok, err := loginRequired(e, db, &loginRequiredOption{}); !ok {
+	contestant, err := getCurrentContestant(e, db, false)
+	if err != nil {
 		return wrapError("check session", err)
 	}
+	if ok, err := loginRequiredByContestant(e, contestant, &loginRequiredOption{}); !ok {
+		return wrapError("check session", err)
+	}
+
 	id, err := strconv.Atoi(e.Param("id"))
 	if err != nil {
 		return fmt.Errorf("parse id: %w", err)
 	}
-	contestant, _ := getCurrentContestant(e, db, false)
 	if !contestant.Staff {
 		return halt(e, http.StatusForbidden, "管理者権限が必要です", nil)
 	}
@@ -612,8 +621,11 @@ func (*ContestantService) Dashboard(e echo.Context) error {
 }
 
 func (*ContestantService) ListNotifications(e echo.Context) error {
-	// TODO: 中でgetCurrentContestantが呼ばれる
-	if ok, err := loginRequired(e, db, &loginRequiredOption{Team: true}); !ok {
+	contestant, err := getCurrentContestant(e, db, false)
+	if err != nil {
+		return wrapError("check session", err)
+	}
+	if ok, err := loginRequiredByContestant(e, contestant, &loginRequiredOption{Team: true}); !ok {
 		return wrapError("check session", err)
 	}
 
@@ -624,7 +636,6 @@ func (*ContestantService) ListNotifications(e echo.Context) error {
 		return fmt.Errorf("begin tx: %w", err)
 	}
 	defer tx.Rollback()
-	contestant, _ := getCurrentContestant(e, tx, false)
 
 	var notifications []*xsuportal.Notification
 	if afterStr != "" {
@@ -683,8 +694,8 @@ func (*ContestantService) ListNotifications(e echo.Context) error {
 }
 
 func (*ContestantService) SubscribeNotification(e echo.Context) error {
-	// TODO: 中でgetCurrentContestantが呼ばれる
-	if ok, err := loginRequired(e, db, &loginRequiredOption{Team: true}); !ok {
+	contestant, _ := getCurrentContestant(e, db, false)
+	if ok, err := loginRequiredByContestant(e, contestant, &loginRequiredOption{Team: true}); !ok {
 		return wrapError("check session", err)
 	}
 
@@ -697,7 +708,6 @@ func (*ContestantService) SubscribeNotification(e echo.Context) error {
 		return err
 	}
 
-	contestant, _ := getCurrentContestant(e, db, false)
 	_, err := db.Exec(
 		"INSERT INTO `push_subscriptions` (`contestant_id`, `endpoint`, `p256dh`, `auth`, `created_at`, `updated_at`) VALUES (?, ?, ?, ?, NOW(6), NOW(6))",
 		contestant.ID,
@@ -712,8 +722,11 @@ func (*ContestantService) SubscribeNotification(e echo.Context) error {
 }
 
 func (*ContestantService) UnsubscribeNotification(e echo.Context) error {
-	// TODO: 中でgetCurrentContestantが呼ばれる
-	if ok, err := loginRequired(e, db, &loginRequiredOption{Team: true}); !ok {
+	contestant, err := getCurrentContestant(e, db, false)
+	if err != nil {
+		return wrapError("check session", err)
+	}
+	if ok, err := loginRequiredByContestant(e, contestant, &loginRequiredOption{Team: true}); !ok {
 		return wrapError("check session", err)
 	}
 
@@ -726,8 +739,7 @@ func (*ContestantService) UnsubscribeNotification(e echo.Context) error {
 		return err
 	}
 
-	contestant, _ := getCurrentContestant(e, db, false)
-	_, err := db.Exec(
+	_, err = db.Exec(
 		"DELETE FROM `push_subscriptions` WHERE `contestant_id` = ? AND `endpoint` = ? LIMIT 1",
 		contestant.ID,
 		req.Endpoint,
@@ -1108,15 +1120,20 @@ func (*RegistrationService) DeleteRegistration(e echo.Context) error {
 		return fmt.Errorf("begin tx: %w", err)
 	}
 	defer tx.Rollback()
-	if ok, err := loginRequired(e, tx, &loginRequiredOption{Team: true, Lock: true}); !ok {
+
+	contestant, err := getCurrentContestant(e, tx, false)
+	if err != nil {
 		return wrapError("check session", err)
 	}
+	if ok, err := loginRequiredByContestant(e, contestant, &loginRequiredOption{Team: true, Lock: true}); !ok {
+		return wrapError("check session", err)
+	}
+
 	if ok, err := contestStatusRestricted(e, tx, resourcespb.Contest_REGISTRATION, "チーム登録期間外は辞退できません"); !ok {
 		return wrapError("check contest status", err)
 	}
 	// TODO: 中でgetCurrentContestantが呼ばれる
 	team, _ := getCurrentTeam(e, tx, false)
-	contestant, _ := getCurrentContestant(e, tx, false)
 	if team.LeaderID.Valid && team.LeaderID.String == contestant.ID {
 		_, err := tx.Exec(
 			"UPDATE `teams` SET `withdrawn` = TRUE, `leader_id` = NULL WHERE `id` = ? LIMIT 1",
@@ -1314,6 +1331,22 @@ func loginRequired(e echo.Context, db sqlx.Queryer, option *loginRequiredOption)
 	if err != nil {
 		return false, fmt.Errorf("current contestant: %w", err)
 	}
+	if contestant == nil {
+		return false, halt(e, http.StatusUnauthorized, "ログインが必要です", nil)
+	}
+	if option.Team {
+		t, err := getCurrentTeam(e, db, option.Lock)
+		if err != nil {
+			return false, fmt.Errorf("current team: %w", err)
+		}
+		if t == nil {
+			return false, halt(e, http.StatusForbidden, "参加登録が必要です", nil)
+		}
+	}
+	return true, nil
+}
+
+func loginRequiredByContestant(e echo.Context, contestant *xsuportal.Contestant, option *loginRequiredOption) (bool, error) {
 	if contestant == nil {
 		return false, halt(e, http.StatusUnauthorized, "ログインが必要です", nil)
 	}
