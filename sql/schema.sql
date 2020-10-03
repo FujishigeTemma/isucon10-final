@@ -18,6 +18,7 @@ CREATE TABLE `teams` (
   `invite_token` VARCHAR(255) NOT NULL,
   `withdrawn` TINYINT(1) DEFAULT FALSE,
   `created_at` DATETIME(6) NOT NULL,
+  `is_only_student` TINYINT(1) DEFAULT TRUE,
   UNIQUE KEY (`leader_id`)
 ) ENGINE=InnoDB DEFAULT CHARACTER SET utf8mb4;
 

@@ -987,6 +987,18 @@ func (*RegistrationService) CreateTeam(e echo.Context) error {
 		return fmt.Errorf("update team: %w", err)
 	}
 
+	if !req.IsStudent {
+		_, err = conn.ExecContext(
+			ctx,
+			"UPDATE `teams` SET `is_only_student` = ? WHERE `id` = ? LIMIT 1",
+			false,
+			teamID,
+		)
+		if err != nil {
+			return fmt.Errorf("update team: %w", err)
+		}
+	}
+
 	return writeProto(e, http.StatusOK, &registrationpb.CreateTeamResponse{
 		TeamId: teamID,
 	})
@@ -1046,6 +1058,18 @@ func (*RegistrationService) JoinTeam(e echo.Context) error {
 	if err != nil {
 		return fmt.Errorf("update contestant: %w", err)
 	}
+
+	if !req.IsStudent || team.Student {
+		_, err = tx.Exec(
+			"UPDATE `teams` SET `is_only_student` = ? WHERE `id` = ? LIMIT 1",
+			false,
+			req.TeamId,
+		)
+		if err != nil {
+			return fmt.Errorf("update team: %w", err)
+		}
+	}
+
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit tx: %w", err)
 	}
@@ -1088,6 +1112,35 @@ func (*RegistrationService) UpdateRegistration(e echo.Context) error {
 	)
 	if err != nil {
 		return fmt.Errorf("update contestant: %w", err)
+	}
+	if contestant.Student != req.IsStudent {
+		if !req.IsStudent {
+			_, err = tx.Exec(
+				"UPDATE `teams` SET `is_only_student` = ? WHERE `id` = ? LIMIT 1",
+				false,
+				team.ID,
+			)
+			if err != nil {
+				return fmt.Errorf("update team: %w", err)
+			}
+		} else {
+			var isAllStudent bool
+			err := tx.Get(&isAllStudent, "SELECT (SUM(`student`) = COUNT(*)) FROM `contestants` GROUP BY `contestants`.`team_id`")
+			if err != nil {
+				return fmt.Errorf("get team error: %w", err)
+			}
+
+			if isAllStudent {
+				_, err := tx.Exec(
+					"UPDATE `teams` SET `is_only_student` = ? WHERE `id` = ? LIMIT 1",
+					true,
+					team.ID,
+				)
+				if err != nil {
+					return fmt.Errorf("update team: %w", err)
+				}
+			}
+		}
 	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit tx: %w", err)
@@ -1402,10 +1455,8 @@ func makeTeamPB(db sqlx.Queryer, t *xsuportal.Team, detail bool, enableMembers b
 			pb.MemberIds = append(pb.MemberIds, member.ID)
 		}
 	}
-	if t.Student.Valid {
-		pb.Student = &resourcespb.Team_StudentStatus{
-			Status: t.Student.Bool,
-		}
+	pb.Student = &resourcespb.Team_StudentStatus{
+		Status: t.Student,
 	}
 	return pb, nil
 }
@@ -1456,7 +1507,7 @@ func makeLeaderboardPB(e echo.Context, teamID int64) (*resourcespb.Leaderboard, 
 		"  `teams`.`name` AS `name`,\n" +
 		"  `teams`.`leader_id` AS `leader_id`,\n" +
 		"  `teams`.`withdrawn` AS `withdrawn`,\n" +
-		"  `team_student_flags`.`student` AS `student`,\n" +
+		"  `teams`.`is_only_student` AS `student`,\n" +
 		"  (`best_score_jobs`.`score_raw` - `best_score_jobs`.`score_deduction`) AS `best_score`,\n" +
 		"  `best_score_jobs`.`started_at` AS `best_score_started_at`,\n" +
 		"  `best_score_jobs`.`finished_at` AS `best_score_marked_at`,\n" +
@@ -1507,16 +1558,6 @@ func makeLeaderboardPB(e echo.Context, teamID int64) (*resourcespb.Leaderboard, 
 		"      `j`.`team_id`\n" +
 		"  ) `best_score_job_ids` ON `best_score_job_ids`.`team_id` = `teams`.`id`\n" +
 		"  LEFT JOIN `benchmark_jobs` `best_score_jobs` ON `best_score_jobs`.`id` = `best_score_job_ids`.`id`\n" +
-		"  -- check student teams\n" +
-		"  LEFT JOIN (\n" +
-		"    SELECT\n" +
-		"      `team_id`,\n" +
-		"      (SUM(`student`) = COUNT(*)) AS `student`\n" +
-		"    FROM\n" +
-		"      `contestants`\n" +
-		"    GROUP BY\n" +
-		"      `contestants`.`team_id`\n" +
-		"  ) `team_student_flags` ON `team_student_flags`.`team_id` = `teams`.`id`\n" +
 		"ORDER BY\n" +
 		"  `latest_score` DESC,\n" +
 		"  `latest_score_marked_at` ASC\n"
