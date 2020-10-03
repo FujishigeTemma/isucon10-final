@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io/ioutil"
 	"sync"
-	"time"
 
 	"github.com/SherClockHolmes/webpush-go"
 	"github.com/golang/protobuf/proto"
@@ -146,7 +145,6 @@ func (n *Notifier) NotifyClarificationAnswered(db sqlx.Ext, c *Clarification, up
 		}
 	}
 
-	option := n.VAPIDKey()
 	ids := []string{}
 	for _, c := range contestants {
 		ids = append(ids, c.ID)
@@ -170,7 +168,7 @@ func (n *Notifier) NotifyClarificationAnswered(db sqlx.Ext, c *Clarification, up
 		if err != nil {
 			return fmt.Errorf("notify: %w", err)
 		}
-		if option != nil {
+		if n.options != nil {
 			notificationPB.Id = notification.ID
 			notificationPB.CreatedAt = timestamppb.New(notification.CreatedAt)
 			info, exist := infoMap[contestant.ID]
@@ -178,7 +176,7 @@ func (n *Notifier) NotifyClarificationAnswered(db sqlx.Ext, c *Clarification, up
 				fmt.Println("exist not subscribe user")
 				return fmt.Errorf("not subscribe")
 			}
-			SendWebPush(option.VAPIDPrivateKey, option.VAPIDPublicKey, notificationPB, &info)
+			SendWebPush(n.options.VAPIDPrivateKey, n.options.VAPIDPublicKey, notificationPB, &info)
 		}
 	}
 	return nil
@@ -198,7 +196,6 @@ func (n *Notifier) NotifyBenchmarkJobFinished(db sqlx.Ext, job *BenchmarkJob) er
 	if err != nil {
 		return fmt.Errorf("select contestants(team_id=%v): %w", job.TeamID, err)
 	}
-	option := n.VAPIDKey()
 	ids := []string{}
 	for _, c := range contestants {
 		ids = append(ids, c.ID)
@@ -220,7 +217,7 @@ func (n *Notifier) NotifyBenchmarkJobFinished(db sqlx.Ext, job *BenchmarkJob) er
 		if err != nil {
 			return fmt.Errorf("notify: %w", err)
 		}
-		if option != nil {
+		if n.options != nil {
 			notificationPB.Id = notification.ID
 			notificationPB.CreatedAt = timestamppb.New(notification.CreatedAt)
 			info, exist := infoMap[contestant.ID]
@@ -228,7 +225,7 @@ func (n *Notifier) NotifyBenchmarkJobFinished(db sqlx.Ext, job *BenchmarkJob) er
 				fmt.Println("exist not subscribe user")
 				return fmt.Errorf("not subscribe")
 			}
-			SendWebPush(option.VAPIDPrivateKey, option.VAPIDPublicKey, notificationPB, &info)
+			SendWebPush(n.options.VAPIDPrivateKey, n.options.VAPIDPublicKey, notificationPB, &info)
 		}
 	}
 	return nil
@@ -260,6 +257,5 @@ func (n *Notifier) notify(db sqlx.Ext, notificationPB *resources.Notification, c
 	if err != nil {
 		return nil, fmt.Errorf("get inserted notification: %w", err)
 	}
-	fmt.Printf("time: %v, now: %v\n", time.Now(), notification.CreatedAt)
 	return &notification, nil
 }
