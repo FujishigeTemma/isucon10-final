@@ -188,6 +188,7 @@ func (*AdminService) Initialize(e echo.Context) error {
 	}
 
 	cacheStore.Flush()
+	dashboardGroup = singleflight.Group{}
 
 	host := util.GetEnv("BENCHMARK_SERVER_HOST", "localhost")
 	port, _ := strconv.Atoi(util.GetEnv("BENCHMARK_SERVER_PORT", "50051"))
