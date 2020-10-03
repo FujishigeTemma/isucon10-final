@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
 	"database/sql"
@@ -9,7 +10,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io/ioutil"
-	"math/rand"
 	"net/http"
 	"strconv"
 	"strings"
@@ -23,11 +23,12 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/patrickmn/go-cache"
-	"google.golang.org/protobuf/types/known/timestamppb"
 	"golang.org/x/sync/singleflight"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	xsuportal "github.com/isucon/isucon10-final/webapp/golang"
 	xsuportalpb "github.com/isucon/isucon10-final/webapp/golang/proto/xsuportal"
+	"github.com/isucon/isucon10-final/webapp/golang/proto/xsuportal/resources"
 	resourcespb "github.com/isucon/isucon10-final/webapp/golang/proto/xsuportal/resources"
 	adminpb "github.com/isucon/isucon10-final/webapp/golang/proto/xsuportal/services/admin"
 	audiencepb "github.com/isucon/isucon10-final/webapp/golang/proto/xsuportal/services/audience"
@@ -677,6 +678,7 @@ func (*ContestantService) SubscribeNotification(e echo.Context) error {
 	if err := e.Bind(&req); err != nil {
 		return err
 	}
+
 	contestant, _ := getCurrentContestant(e, db, false)
 	_, err := db.Exec(
 		"INSERT INTO `push_subscriptions` (`contestant_id`, `endpoint`, `p256dh`, `auth`, `created_at`, `updated_at`) VALUES (?, ?, ?, ?, NOW(6), NOW(6))",
