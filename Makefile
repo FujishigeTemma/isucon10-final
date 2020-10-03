@@ -59,9 +59,8 @@ pull:
 
 .PHONY: build
 build:
-	@cd $(BUILD_DIR) && \
-	go build -o $(BIN_NAME) && \
-	go build -o $(BIN_NAME)
+	@cd golang && \
+	make all
 
 .PHONY: restart
 restart:
