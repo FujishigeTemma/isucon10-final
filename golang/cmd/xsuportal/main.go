@@ -55,7 +55,7 @@ const (
 
 var db *sqlx.DB
 var notifier xsuportal.Notifier
-var cacheStore = cache.New(1*time.Second, 5*time.Minute)
+var cacheStore = cache.New(900*time.Millisecond, 5*time.Minute)
 
 func main() {
 	http.DefaultServeMux.Handle("/debug/fgprof", fgprof.Handler())
