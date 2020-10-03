@@ -262,6 +262,7 @@ func (n *Notifier) ReadNotification(afterID int, contestantID string) []Notifica
 		c := notifications[i]
 		if c.ContestantID == contestantID {
 			res = append(res, c)
+			fmt.Println("hit notification")
 			notifications[i].Read = true
 		}
 	}

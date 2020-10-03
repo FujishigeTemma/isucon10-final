@@ -630,6 +630,7 @@ func (*ContestantService) ListNotifications(e echo.Context) error {
 	contestant, _ := getCurrentContestant(e, tx, false)
 
 	var notifications []xsuportal.Notification
+	start := time.Now()
 	if afterStr != "" {
 		after, err := strconv.Atoi(afterStr)
 		if err != nil {
@@ -639,6 +640,7 @@ func (*ContestantService) ListNotifications(e echo.Context) error {
 	} else {
 		notifications = notifier.ReadNotification(-1, contestant.ID)
 	}
+	fmt.Printf("Get list finish: %v\n", time.Now().Before(start))
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit tx: %w", err)
 	}
