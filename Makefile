@@ -64,7 +64,8 @@ build:
 
 .PHONY: restart
 restart:
-	@sudo systemctl restart $(APP_SERVICE)
+	@sudo systemctl restart $(APP_API_SERVICE)
+	@sudo systemctl restart $(APP_WEB_SERVICE)
 
 .PHONY: bench
 bench: stash-log log
@@ -73,14 +74,14 @@ bench: stash-log log
 stash-log:
 	@$(eval when := $(shell date "+%s"))
 	@mkdir -p ~/logs/$(when)
-	@if [ -f $(NGX_LOG) ]; then \
-		sudo mv -f $(NGX_LOG) ~/logs/$(when)/ ; \
-	fi
 	@if [ -f $(MYSQL_LOG) ]; then \
 		sudo mv -f $(MYSQL_LOG) ~/logs/$(when)/ ; \
 	fi
-	@sudo systemctl restart nginx
 	@sudo systemctl restart mysql
+	# @if [ -f $(NGX_LOG) ]; then \
+	# 	sudo mv -f $(NGX_LOG) ~/logs/$(when)/ ; \
+	# fi
+	# @sudo systemctl restart nginx
 
 .PHONY: curl
 curl:
@@ -88,7 +89,8 @@ curl:
 
 .PHONY: status
 status:
-	@sudo systemctl status $(APP_SERVICE)
+	@sudo systemctl status $(APP_API_SERVICE)
+	@sudo systemctl status $(APP_WEB_SERVICE)
 
 .PHONY: rollback
 rollback: reset build restart curl
