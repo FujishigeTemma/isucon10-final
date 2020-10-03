@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"sync"
+	"time"
 
 	"github.com/SherClockHolmes/webpush-go"
 	"github.com/golang/protobuf/proto"
@@ -239,25 +240,36 @@ func (n *Notifier) notify(db sqlx.Ext, notificationPB *resources.Notification, c
 		return nil, fmt.Errorf("marshal notification: %w", err)
 	}
 	encodedMessage := base64.StdEncoding.EncodeToString(m)
+	t := time.Now()
+	now := t.Format("2006-01-02 11:22:33.000000")
 	res, err := db.Exec(
-		"INSERT INTO `notifications` (`contestant_id`, `encoded_message`, `read`, `created_at`, `updated_at`) VALUES (?, ?, FALSE, NOW(6), NOW(6))",
+		"INSERT INTO `notifications` (`contestant_id`, `encoded_message`, `read`, `created_at`, `updated_at`) VALUES (?, ?, FALSE, ?, ?)",
 		contestantID,
 		encodedMessage,
+		now,
+		now,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("insert notification: %w", err)
 	}
 	lastInsertID, _ := res.LastInsertId()
-	// notification := Notification{}
-	var notification Notification
-	err = sqlx.Get(
-		db,
-		&notification,
-		"SELECT * FROM `notifications` WHERE `id` = ? LIMIT 1",
-		lastInsertID,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("get inserted notification: %w", err)
+	notification := Notification{
+		ID: lastInsertID,
+		ContestantID: contestantID,
+		EncodedMessage: encodedMessage,
+		Read: false,
+		CreatedAt: t,
+		UpdatedAt: t,
 	}
+	// var notification Notification
+	// err = sqlx.Get(
+	// 	db,
+	// 	&notification,
+	// 	"SELECT * FROM `notifications` WHERE `id` = ? LIMIT 1",
+	// 	lastInsertID,
+	// )
+	// if err != nil {
+	// 	return nil, fmt.Errorf("get inserted notification: %w", err)
+	// }
 	return &notification, nil
 }
