@@ -1183,6 +1183,11 @@ func (*AudienceService) Dashboard(e echo.Context) error {
 	if err != nil {
 		return fmt.Errorf("make leaderboard: %w", err)
 	}
+
+	// 1秒はブラウザ側でキャッシュ
+	e.Response().Header().Set("Cache-Control", "max-age=1, public")
+	e.Response().Header().Set("Expires", time.Now().Add(1 * time.Second).Format(http.TimeFormat))
+
 	return writeProto(e, http.StatusOK, &audiencepb.DashboardResponse{
 		Leaderboard: leaderboard,
 	})
