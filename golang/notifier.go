@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"sync"
+	"time"
 
 	"github.com/SherClockHolmes/webpush-go"
 	"github.com/golang/protobuf/proto"
@@ -15,6 +16,10 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/isucon/isucon10-final/webapp/golang/proto/xsuportal/resources"
+)
+
+var (
+	notifications = []Notification{}
 )
 
 const (
@@ -172,7 +177,6 @@ func (n *Notifier) NotifyClarificationAnswered(db sqlx.Ext, c *Clarification, up
 		if option != nil {
 			notificationPB.Id = notification.ID
 			notificationPB.CreatedAt = timestamppb.New(notification.CreatedAt)
-			// TODO: Web Push IIKANJI NI SHITE
 			info, exist := infoMap[contestant.ID]
 			if !exist {
 				fmt.Println("exist not subscribe user")
@@ -223,7 +227,6 @@ func (n *Notifier) NotifyBenchmarkJobFinished(db sqlx.Ext, job *BenchmarkJob) er
 		if option != nil {
 			notificationPB.Id = notification.ID
 			notificationPB.CreatedAt = timestamppb.New(notification.CreatedAt)
-			// TODO: Web Push IIKANJI NI SHITE
 			info, exist := infoMap[contestant.ID]
 			if !exist {
 				fmt.Println("exist not subscribe user")
@@ -241,26 +244,28 @@ func (n *Notifier) notify(db sqlx.Ext, notificationPB *resources.Notification, c
 		return nil, fmt.Errorf("marshal notification: %w", err)
 	}
 	encodedMessage := base64.StdEncoding.EncodeToString(m)
-	res, err := db.Exec(
-		"INSERT INTO `notifications` (`contestant_id`, `encoded_message`, `read`, `created_at`, `updated_at`) VALUES (?, ?, FALSE, NOW(6), NOW(6))",
-		contestantID,
-		encodedMessage,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("insert notification: %w", err)
+	notification := Notification{
+		ID: int64(len(notifications) + 1),
+		ContestantID: contestantID,
+		EncodedMessage: encodedMessage,
+		Read: false,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
 	}
-	lastInsertID, _ := res.LastInsertId()
-	var notification Notification
-	err = sqlx.Get(
-		db,
-		&notification,
-		"SELECT * FROM `notifications` WHERE `id` = ? LIMIT 1",
-		lastInsertID,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("get inserted notification: %w", err)
-	}
+	notifications = append(notifications, notification)
 	return &notification, nil
+}
+
+func (n *Notifier) ReadNotification(afterID int, contestantID string) []Notification {
+	res := []Notification{}
+	for i := afterID + 1; i < len(notifications); i++ {
+		c := notifications[i]
+		if c.ContestantID == contestantID {
+			res = append(res, c)
+			notifications[i].Read = true
+		}
+	}
+	return res
 }
 
 
