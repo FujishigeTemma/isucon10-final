@@ -992,7 +992,7 @@ func (*RegistrationService) CreateTeam(e echo.Context) error {
 	if !withinCapacity {
 		return halt(e, http.StatusForbidden, "チーム登録数上限です", nil)
 	}
-	_, err = conn.ExecContext(
+	res, err := conn.ExecContext(
 		ctx,
 		"INSERT INTO `teams` (`name`, `email_address`, `invite_token`, `created_at`) VALUES (?, ?, ?, NOW(6))",
 		req.TeamName,
@@ -1002,12 +1002,7 @@ func (*RegistrationService) CreateTeam(e echo.Context) error {
 	if err != nil {
 		return fmt.Errorf("insert team: %w", err)
 	}
-	// TODO: res.LastInsertId()とれそう
-	var teamID int64
-	err = conn.QueryRowContext(
-		ctx,
-		"SELECT LAST_INSERT_ID() AS `id`",
-	).Scan(&teamID)
+	teamID, err := res.LastInsertId()
 	if err != nil || teamID == 0 {
 		return halt(e, http.StatusInternalServerError, "チームを登録できませんでした", nil)
 	}
