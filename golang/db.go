@@ -18,6 +18,16 @@ func GetDB() (*sqlx.DB, error) {
 		"time_zone": "'+00:00'",
 	}
 	mysqlConfig.ParseTime = true
+	mysqlConfig.InterpolateParams = true
 
-	return sqlx.Open("mysql", mysqlConfig.FormatDSN())
+	dbx, err := sqlx.Open("mysql", mysqlConfig.FormatDSN())
+	if err != nil {
+		return nil, err
+	}
+
+	dbx.SetMaxIdleConns(1024) // デフォルトだと2
+	dbx.SetConnMaxLifetime(0) // 一応セット
+	dbx.SetConnMaxIdleTime(0) // 一応セット go1.15以上
+
+	return dbx, nil
 }
