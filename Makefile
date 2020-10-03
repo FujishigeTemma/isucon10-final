@@ -21,8 +21,12 @@ KATARIBE_CFG:=./kataribe.toml
 SLACKCAT:=slackcat --tee --channel ##チャンネル名##
 SLACKRAW:=slackcat --channel ##チャンネル名##
 
-PPROF:=go tool pprof -proto -output profile.pb.gz -seconds=120 http://localhost:6060/debug/pprof/profile
-PPROF:=go tool pprof -proto -output fgprofile.pb.gz -seconds=120 http://localhost:6060/debug/fgprof
+# WEB
+PPROF_WEB:=go tool pprof -proto -output profile.pb.gz -seconds=120 http://localhost:6060/debug/pprof/profile
+FGPROF_WEB:=go tool pprof -proto -output fgprofile.pb.gz -seconds=120 http://localhost:6060/debug/fgprof
+# API
+PPROF_API:=go tool pprof -proto -output profile.pb.gz -seconds=120 http://localhost:6061/debug/pprof/profile
+FGPROF_API:=go tool pprof -proto -output fgprofile.pb.gz -seconds=120 http://localhost:6061/debug/fgprof
 
 PROJECT_ROOT:=/home/isucon/webapp ##プロジェクトルートディレクトリ##
 BUILD_DIR:=/home/isucon/webapp/golang ##バイナリ生成先##
@@ -126,16 +130,30 @@ analytics: kataru dumpslow digestslow
 kataru:
 	@sudo cat $(NGX_LOG) | kataribe -f $(KATARIBE_CFG) | $(SLACKCAT) kataribe
 
-.PHONY: pprof
-pprof:
-	@$(PPROF)
+.PHONY: pprofw
+pprofw:
+	@$(PPROF_WEB)
 	@go tool pprof -png -output pprof.png profile.pb.gz
 	@$(SLACKRAW) pprof -n pprof.png ./pprof.png
 	@go tool pprof -http=$(HOST_ADDRESS):6600 -no_browser profile.pb.gz
 
-.PHONY: fgprof
-fgprof:
-	@$(FGPROF)
+.PHONY: pprofb
+pprofb:
+	@$(PPROF_API)
+	@go tool pprof -png -output pprof.png profile.pb.gz
+	@$(SLACKRAW) pprof -n pprof.png ./pprof.png
+	@go tool pprof -http=$(HOST_ADDRESS):6600 -no_browser profile.pb.gz
+
+.PHONY: fgprofw
+fgprofw:
+	@$(FGPROF_WEB)
+	@go tool pprof -png -output fgprof.png fgprofile.pb.gz
+	@$(SLACKRAW) pprof -n fgprof.png ./fgprof.png
+	@go tool pprof -http=$(HOST_ADDRESS):6600 -no_browser fgprofile.pb.gz
+
+.PHONY: fgprofb
+fgprofb:
+	@$(FGPROF_API)
 	@go tool pprof -png -output fgprof.png fgprofile.pb.gz
 	@$(SLACKRAW) pprof -n fgprof.png ./fgprof.png
 	@go tool pprof -http=$(HOST_ADDRESS):6600 -no_browser fgprofile.pb.gz
