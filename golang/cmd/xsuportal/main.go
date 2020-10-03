@@ -21,7 +21,6 @@ import (
 	"github.com/jmoiron/sqlx"
 	"github.com/labstack/echo-contrib/session"
 	"github.com/labstack/echo/v4"
-	"github.com/labstack/echo/v4/middleware"
 	"github.com/patrickmn/go-cache"
 	"golang.org/x/sync/singleflight"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -37,8 +36,6 @@ import (
 	"github.com/isucon/isucon10-final/webapp/golang/util"
 
 	_ "net/http/pprof"
-
-	"github.com/felixge/fgprof"
 )
 
 const (
@@ -59,7 +56,6 @@ var cacheStore = cache.New(900*time.Millisecond, 5*time.Minute)
 var dashboardGroup singleflight.Group
 
 func main() {
-	http.DefaultServeMux.Handle("/debug/fgprof", fgprof.Handler())
 	go http.ListenAndServe(":6060", nil)
 
 	srv := echo.New()
@@ -81,9 +77,6 @@ func main() {
 	xsuportal.WaitDB(db)
 	go xsuportal.PollDB(db)
 
-	// TODO: LoggerとRecover後で外す
-	srv.Use(middleware.Logger())
-	srv.Use(middleware.Recover())
 	srv.Use(session.Middleware(sessions.NewCookieStore([]byte("tagomoris"))))
 
 	srv.File("/", "public/audience.html")
@@ -135,9 +128,6 @@ func main() {
 	srv.POST("/api/signup", contestant.Signup)
 	srv.POST("/api/login", contestant.Login)
 	srv.POST("/api/logout", contestant.Logout)
-
-	// TODO: 後でLogger外す
-	srv.Logger.Error(srv.StartServer(srv.Server))
 }
 
 type ProtoBinder struct{}
