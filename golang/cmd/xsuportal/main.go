@@ -629,20 +629,37 @@ func (*ContestantService) ListNotifications(e echo.Context) error {
 	defer tx.Rollback()
 	contestant, _ := getCurrentContestant(e, tx, false)
 
-	var notifications []xsuportal.Notification
-	start := time.Now()
+	var notifications []*xsuportal.Notification
 	if afterStr != "" {
 		after, err := strconv.Atoi(afterStr)
 		if err != nil {
 			return fmt.Errorf("parse after: %w", err)
 		}
-		notifications = notifier.ReadNotification(after, contestant.ID)
+		err = tx.Select(
+			&notifications,
+			"SELECT * FROM `notifications` WHERE `contestant_id` = ? AND `id` > ? ORDER BY `id`",
+			contestant.ID,
+			after,
+		)
+		if err != sql.ErrNoRows && err != nil {
+			return fmt.Errorf("select notifications(after=%v): %w", after, err)
+		}
 	} else {
-		notifications = notifier.ReadNotification(-1, contestant.ID)
+		err = tx.Select(
+			&notifications,
+			"SELECT * FROM `notifications` WHERE `contestant_id` = ? ORDER BY `id`",
+			contestant.ID,
+		)
+		if err != sql.ErrNoRows && err != nil {
+			return fmt.Errorf("select notifications: %w", err)
+		}
 	}
-	fmt.Printf("Get list finish: %v\n", time.Now().Sub(start))
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit tx: %w", err)
+	_, err = tx.Exec(
+		"UPDATE `notifications` SET `read` = TRUE WHERE `contestant_id` = ? AND `read` = FALSE",
+		contestant.ID,
+	)
+	if err != nil {
+		return fmt.Errorf("update notifications: %w", err)
 	}
 	team, _ := getCurrentTeam(e, db, false)
 
@@ -1645,7 +1662,7 @@ func makeBenchmarkJobsPB(e echo.Context, db sqlx.Queryer, limit int) ([]*resourc
 	return benchmarkJobs, nil
 }
 
-func makeNotificationsPB(notifications []xsuportal.Notification) ([]*resourcespb.Notification, error) {
+func makeNotificationsPB(notifications []*xsuportal.Notification) ([]*resourcespb.Notification, error) {
 	var ns []*resourcespb.Notification
 	for _, notification := range notifications {
 		decoded, err := base64.StdEncoding.DecodeString(notification.EncodedMessage)
