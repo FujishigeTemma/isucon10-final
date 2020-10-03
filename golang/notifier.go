@@ -15,7 +15,6 @@ import (
 	"github.com/jmoiron/sqlx"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	xsuportal "github.com/isucon/isucon10-final/webapp/golang"
 	"github.com/isucon/isucon10-final/webapp/golang/proto/xsuportal/resources"
 )
 
@@ -140,14 +139,14 @@ func SendWebPush(vapidPrivateKey, vapidPublicKey string, notificationPB *resourc
 // 	return nil
 // }
 
-func getTargetsFromIDs(db sqlx.Ext, ids []string) ([]xsuportal.PushSubscription, error) {
+func getTargetsMapFromIDs(db sqlx.Ext, ids []string) (map[string]PushSubscription, error) {
 	inQuery, inArgs, err := sqlx.In("SELECT * FROM `push_subscriptions` WHERE `contestant_id` IN (?)", ids)
 	if err != nil {
 		fmt.Println("error in constructing query in getTargetsFromIDs")
 		fmt.Errorf("%#v", err)
 		return nil, err
 	}
-	targetInfos := []xsuportal.PushSubscription{}
+	targetInfos := []PushSubscription{}
 	err = sqlx.Select(
 		db,
 		&targetInfos,
