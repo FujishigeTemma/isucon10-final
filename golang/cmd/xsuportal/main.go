@@ -62,6 +62,8 @@ func main() {
 	http.DefaultServeMux.Handle("/debug/fgprof", fgprof.Handler())
 	go http.ListenAndServe(":6060", nil)
 
+	notifier = xsuportal.Notifier{}
+
 	srv := echo.New()
 	srv.Debug = util.GetEnv("DEBUG", "") != "" // TODO: 後で外す
 	srv.Server.Addr = fmt.Sprintf(":%v", util.GetEnv("PORT", "9292"))
