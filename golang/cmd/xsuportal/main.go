@@ -49,11 +49,12 @@ var notifier xsuportal.Notifier
 
 func main() {
 	srv := echo.New()
-	srv.Debug = util.GetEnv("DEBUG", "") != ""
+	srv.Debug = util.GetEnv("DEBUG", "") != "" // TODO: 後で外す
 	srv.Server.Addr = fmt.Sprintf(":%v", util.GetEnv("PORT", "9292"))
 	srv.HideBanner = true
 
 	srv.Binder = ProtoBinder{}
+	// TODO: あとで外す
 	srv.HTTPErrorHandler = func(err error, c echo.Context) {
 		if !c.Response().Committed {
 			c.Logger().Error(c.Request().Method, " ", c.Request().URL.Path, " ", err)
@@ -66,6 +67,7 @@ func main() {
 	xsuportal.WaitDB(db)
 	go xsuportal.PollDB(db)
 
+	// TODO: LoggerとRecover後で外す
 	srv.Use(middleware.Logger())
 	srv.Use(middleware.Recover())
 	srv.Use(session.Middleware(sessions.NewCookieStore([]byte("tagomoris"))))
@@ -120,6 +122,7 @@ func main() {
 	srv.POST("/api/login", contestant.Login)
 	srv.POST("/api/logout", contestant.Logout)
 
+	// TODO: 後でLogger外す
 	srv.Logger.Error(srv.StartServer(srv.Server))
 }
 
@@ -128,6 +131,7 @@ type ProtoBinder struct{}
 func (p ProtoBinder) Bind(i interface{}, e echo.Context) error {
 	rc := e.Request().Body
 	defer rc.Close()
+	// TODO: sync.Poolでbufferを使いまわす
 	b, err := ioutil.ReadAll(rc)
 	if err != nil {
 		return halt(e, http.StatusBadRequest, "", fmt.Errorf("read request body: %w", err))
@@ -200,6 +204,7 @@ func (*AdminService) Initialize(e echo.Context) error {
 }
 
 func (*AdminService) ListClarifications(e echo.Context) error {
+	// TODO: 中でgetCurrentContestantが呼ばれる
 	if ok, err := loginRequired(e, db, &loginRequiredOption{}); !ok {
 		return wrapError("check session", err)
 	}
@@ -213,6 +218,7 @@ func (*AdminService) ListClarifications(e echo.Context) error {
 		return fmt.Errorf("query clarifications: %w", err)
 	}
 	res := &adminpb.ListClarificationsResponse{}
+	// TODO: n+1
 	for _, clarification := range clarifications {
 		var team xsuportal.Team
 		err := db.Get(
@@ -233,6 +239,7 @@ func (*AdminService) ListClarifications(e echo.Context) error {
 }
 
 func (*AdminService) GetClarification(e echo.Context) error {
+	// TODO: 中でgetCurrentContestantが呼ばれる
 	if ok, err := loginRequired(e, db, &loginRequiredOption{}); !ok {
 		return wrapError("check session", err)
 	}
@@ -272,6 +279,7 @@ func (*AdminService) GetClarification(e echo.Context) error {
 }
 
 func (*AdminService) RespondClarification(e echo.Context) error {
+	// TODO: 中でgetCurrentContestantが呼ばれる
 	if ok, err := loginRequired(e, db, &loginRequiredOption{}); !ok {
 		return wrapError("check session", err)
 	}
@@ -318,6 +326,7 @@ func (*AdminService) RespondClarification(e echo.Context) error {
 	if err != nil {
 		return fmt.Errorf("update clarification: %w", err)
 	}
+	// TODO: とらずに生成できる?
 	var clarification xsuportal.Clarification
 	err = tx.Get(
 		&clarification,
@@ -363,6 +372,7 @@ func (*CommonService) GetCurrentSession(e echo.Context) error {
 	if currentContestant != nil {
 		res.Contestant = makeContestantPB(currentContestant)
 	}
+	// TODO: 中でgetCurrentContestantが呼ばれる
 	currentTeam, err := getCurrentTeam(e, db, false)
 	if err != nil {
 		return fmt.Errorf("get current team: %w", err)
@@ -396,12 +406,14 @@ func (*ContestantService) EnqueueBenchmarkJob(e echo.Context) error {
 		return fmt.Errorf("begin tx: %w", err)
 	}
 	defer tx.Rollback()
+	// TODO: 中でgetCurrentContestantが呼ばれる
 	if ok, err := loginRequired(e, tx, &loginRequiredOption{Team: true}); !ok {
 		return wrapError("check session", err)
 	}
 	if ok, err := contestStatusRestricted(e, tx, resourcespb.Contest_STARTED, "競技時間外はベンチマークを実行できません"); !ok {
 		return wrapError("check contest status", err)
 	}
+	// TODO: 中でgetCurrentContestantが呼ばれる
 	team, _ := getCurrentTeam(e, tx, false)
 	var jobCount int
 	err = tx.Get(
@@ -455,6 +467,7 @@ func (*ContestantService) ListBenchmarkJobs(e echo.Context) error {
 }
 
 func (*ContestantService) GetBenchmarkJob(e echo.Context) error {
+	// TODO: 中でgetCurrentContestantが呼ばれる
 	if ok, err := loginRequired(e, db, &loginRequiredOption{Team: true}); !ok {
 		return wrapError("check session", err)
 	}
@@ -462,6 +475,7 @@ func (*ContestantService) GetBenchmarkJob(e echo.Context) error {
 	if err != nil {
 		return fmt.Errorf("parse id: %w", err)
 	}
+	// TODO: 中でgetCurrentContestantが呼ばれる
 	team, _ := getCurrentTeam(e, db, false)
 	var job xsuportal.BenchmarkJob
 	err = db.Get(
@@ -482,9 +496,11 @@ func (*ContestantService) GetBenchmarkJob(e echo.Context) error {
 }
 
 func (*ContestantService) ListClarifications(e echo.Context) error {
+	// TODO: 中でgetCurrentContestantが呼ばれる
 	if ok, err := loginRequired(e, db, &loginRequiredOption{Team: true}); !ok {
 		return wrapError("check session", err)
 	}
+	// TODO: 中でgetCurrentContestantが呼ばれる
 	team, _ := getCurrentTeam(e, db, false)
 	var clarifications []xsuportal.Clarification
 	err := db.Select(
@@ -496,6 +512,7 @@ func (*ContestantService) ListClarifications(e echo.Context) error {
 		return fmt.Errorf("select clarifications: %w", err)
 	}
 	res := &contestantpb.ListClarificationsResponse{}
+	// TODO: n+1
 	for _, clarification := range clarifications {
 		var team xsuportal.Team
 		err := db.Get(
@@ -516,6 +533,7 @@ func (*ContestantService) ListClarifications(e echo.Context) error {
 }
 
 func (*ContestantService) RequestClarification(e echo.Context) error {
+	// TODO: 中でgetCurrentContestantが呼ばれる
 	if ok, err := loginRequired(e, db, &loginRequiredOption{Team: true}); !ok {
 		return wrapError("check session", err)
 	}
@@ -528,6 +546,7 @@ func (*ContestantService) RequestClarification(e echo.Context) error {
 		return fmt.Errorf("begin tx: %w", err)
 	}
 	defer tx.Rollback()
+	// TODO: 中でgetCurrentContestantが呼ばれる
 	team, _ := getCurrentTeam(e, tx, false)
 	_, err = tx.Exec(
 		"INSERT INTO `clarifications` (`team_id`, `question`, `created_at`, `updated_at`) VALUES (?, ?, NOW(6), NOW(6))",
@@ -538,6 +557,7 @@ func (*ContestantService) RequestClarification(e echo.Context) error {
 		return fmt.Errorf("insert clarification: %w", err)
 	}
 	var clarification xsuportal.Clarification
+	// TODO: res.LastInsertId()つかえそう、てか生成できそうな気がする
 	err = tx.Get(&clarification, "SELECT * FROM `clarifications` WHERE `id` = LAST_INSERT_ID() LIMIT 1")
 	if err != nil {
 		return fmt.Errorf("get clarification: %w", err)
@@ -555,9 +575,11 @@ func (*ContestantService) RequestClarification(e echo.Context) error {
 }
 
 func (*ContestantService) Dashboard(e echo.Context) error {
+	// TODO: 中でgetCurrentContestantが呼ばれる
 	if ok, err := loginRequired(e, db, &loginRequiredOption{Team: true}); !ok {
 		return wrapError("check session", err)
 	}
+	// TODO: 中でgetCurrentContestantが呼ばれる
 	team, _ := getCurrentTeam(e, db, false)
 	leaderboard, err := makeLeaderboardPB(e, team.ID)
 	if err != nil {
@@ -569,6 +591,7 @@ func (*ContestantService) Dashboard(e echo.Context) error {
 }
 
 func (*ContestantService) ListNotifications(e echo.Context) error {
+	// TODO: 中でgetCurrentContestantが呼ばれる
 	if ok, err := loginRequired(e, db, &loginRequiredOption{Team: true}); !ok {
 		return wrapError("check session", err)
 	}
@@ -639,6 +662,7 @@ func (*ContestantService) ListNotifications(e echo.Context) error {
 }
 
 func (*ContestantService) SubscribeNotification(e echo.Context) error {
+	// TODO: 中でgetCurrentContestantが呼ばれる
 	if ok, err := loginRequired(e, db, &loginRequiredOption{Team: true}); !ok {
 		return wrapError("check session", err)
 	}
@@ -667,6 +691,7 @@ func (*ContestantService) SubscribeNotification(e echo.Context) error {
 }
 
 func (*ContestantService) UnsubscribeNotification(e echo.Context) error {
+	// TODO: 中でgetCurrentContestantが呼ばれる
 	if ok, err := loginRequired(e, db, &loginRequiredOption{Team: true}); !ok {
 		return wrapError("check session", err)
 	}
@@ -878,6 +903,7 @@ func (*RegistrationService) CreateTeam(e echo.Context) error {
 	}
 	defer conn.Close()
 
+	// TODO: LOCK TABLESやばくない？
 	_, err = conn.ExecContext(ctx, "LOCK TABLES `teams` WRITE, `contestants` WRITE")
 	if err != nil {
 		return fmt.Errorf("lock tables: %w", err)
@@ -890,6 +916,7 @@ func (*RegistrationService) CreateTeam(e echo.Context) error {
 		return fmt.Errorf("read random: %w", err)
 	}
 	inviteToken := base64.URLEncoding.EncodeToString(randomBytes)
+	// TODO: 数は手元で持ってもよさそう
 	var withinCapacity bool
 	err = conn.QueryRowContext(
 		ctx,
@@ -912,6 +939,7 @@ func (*RegistrationService) CreateTeam(e echo.Context) error {
 	if err != nil {
 		return fmt.Errorf("insert team: %w", err)
 	}
+	// TODO: res.LastInsertId()とれそう
 	var teamID int64
 	err = conn.QueryRowContext(
 		ctx,
@@ -1020,9 +1048,11 @@ func (*RegistrationService) UpdateRegistration(e echo.Context) error {
 		return fmt.Errorf("begin tx: %w", err)
 	}
 	defer tx.Rollback()
+	// TODO: 中でgetCurrentContestantが呼ばれる
 	if ok, err := loginRequired(e, tx, &loginRequiredOption{Team: true, Lock: true}); !ok {
 		return wrapError("check session", err)
 	}
+	// TODO: 中でgetCurrentContestantが呼ばれる
 	team, _ := getCurrentTeam(e, tx, false)
 	contestant, _ := getCurrentContestant(e, tx, false)
 	if team.LeaderID.Valid && team.LeaderID.String == contestant.ID {
@@ -1063,6 +1093,7 @@ func (*RegistrationService) DeleteRegistration(e echo.Context) error {
 	if ok, err := contestStatusRestricted(e, tx, resourcespb.Contest_REGISTRATION, "チーム登録期間外は辞退できません"); !ok {
 		return wrapError("check contest status", err)
 	}
+	// TODO: 中でgetCurrentContestantが呼ばれる
 	team, _ := getCurrentTeam(e, tx, false)
 	contestant, _ := getCurrentContestant(e, tx, false)
 	if team.LeaderID.Valid && team.LeaderID.String == contestant.ID {
@@ -1104,6 +1135,7 @@ func (*AudienceService) ListTeams(e echo.Context) error {
 		return fmt.Errorf("select teams: %w", err)
 	}
 	res := &audiencepb.ListTeamsResponse{}
+	// TODO: n+1
 	for _, team := range teams {
 		var members []xsuportal.Contestant
 		err := db.Select(
@@ -1276,6 +1308,7 @@ func contestStatusRestricted(e echo.Context, db sqlx.Queryer, status resourcespb
 }
 
 func writeProto(e echo.Context, code int, m proto.Message) error {
+	// TODO: sync.Poolでbyte使いまわす
 	res, _ := proto.Marshal(m)
 	return e.Blob(code, "application/vnd.google.protobuf", res)
 }
@@ -1395,6 +1428,8 @@ func makeLeaderboardPB(e echo.Context, teamID int64) (*resourcespb.Leaderboard, 
 	}
 	defer tx.Rollback()
 	var leaderboard []xsuportal.LeaderBoardTeam
+	// TODO: latest_score_jobsとteamのjoinだけであとは別のqueryにするのがよさそうみある
+	// TODO: サブクエリとjoinがやばそう?
 	query := "SELECT\n" +
 		"  `teams`.`id` AS `id`,\n" +
 		"  `teams`.`name` AS `name`,\n" +
