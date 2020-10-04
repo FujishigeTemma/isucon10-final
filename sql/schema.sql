@@ -6,7 +6,8 @@ CREATE TABLE `contestants` (
   `name` VARCHAR(255),
   `student` TINYINT(1) DEFAULT FALSE,
   `staff` TINYINT(1) DEFAULT FALSE,
-  `created_at` DATETIME(6) NOT NULL
+  `created_at` DATETIME(6) NOT NULL,
+  INDEX idx_team_id (`team_id`)
 ) ENGINE=InnoDB DEFAULT CHARACTER SET=utf8mb4;
 
 DROP TABLE IF EXISTS `teams`;
