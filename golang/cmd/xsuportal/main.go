@@ -109,10 +109,10 @@ func (m ContestantCacheMap) Set(id string, u xsuportal.Contestant) {
 }
 
 func (m ContestantCacheMap) SweepByTeamID(teamID int64) {
+	m.LockAll()
 	for i := range m {
 		s := m[i]
 
-		m.LockAll()
 		for j := range s.contestants {
 			if s.contestants[j].TeamID.Int64 == teamID {
 				contestantCache.SetWithoutLock(s.contestants[j].ID, xsuportal.Contestant{
@@ -128,8 +128,8 @@ func (m ContestantCacheMap) SweepByTeamID(teamID int64) {
 				})
 			}
 		}
-		m.UnlockAll()
 	}
+	m.UnlockAll()
 }
 
 func (m ContestantCacheMap) Lock(id string) {
@@ -1474,24 +1474,22 @@ func getCurrentContestant(e echo.Context, lock bool) (*xsuportal.Contestant, err
 		return nil, nil
 	}
 	var contestant xsuportal.Contestant
-	//query := "SELECT * FROM `contestants` WHERE `id` = ? LIMIT 1"
+
 	if lock {
-		//query += " FOR UPDATE"
-		contestantCache.Lock(contestantID.(string))
-		contestantCache.GetWithoutLock(contestantID.(string))
+		err = sqlx.Get(db, &contestant, "SELECT * FROM `contestants` WHERE `id` = ? LIMIT 1  FOR UPDATE", contestantID)
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		if err != nil {
+			return nil, fmt.Errorf("query contestant: %w", err)
+		}
 	} else {
 		contestant, ok = contestantCache.Get(contestantID.(string))
 	}
 	if !ok {
 		return nil, nil
 	}
-	//err = sqlx.Get(db, &contestant, query, contestantID)
-	//if err == sql.ErrNoRows {
-	//	return nil, nil
-	//}
-	//if err != nil {
-	//	return nil, fmt.Errorf("query contestant: %w", err)
-	//}
+
 	xc.Contestant = &contestant
 	return xc.Contestant, nil
 }
