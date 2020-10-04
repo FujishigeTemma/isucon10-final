@@ -16,7 +16,7 @@ CREATE TABLE `teams` (
   `name` VARCHAR(255) NOT NULL,
   `leader_id` VARCHAR(255),
   `email_address` VARCHAR(255) NOT NULL,
-  `invite_token` VARCHAR(255) NOT NULL,
+  `invite_token` VARCHAR(255) NOT NULL UNIQUE,
   `withdrawn` TINYINT(1) DEFAULT FALSE,
   `created_at` DATETIME(6) NOT NULL,
   UNIQUE KEY (`leader_id`)
