@@ -109,9 +109,10 @@ func (m ContestantCacheMap) Set(id string, u xsuportal.Contestant) {
 }
 
 func (m ContestantCacheMap) SweepByTeamID(teamID int64) {
-	m.LockAll()
 	for i := range m {
 		s := m[i]
+
+		m.LockAll()
 		for j := range s.contestants {
 			if s.contestants[j].TeamID.Int64 == teamID {
 				contestantCache.SetWithoutLock(s.contestants[j].ID, xsuportal.Contestant{
@@ -127,8 +128,8 @@ func (m ContestantCacheMap) SweepByTeamID(teamID int64) {
 				})
 			}
 		}
+		m.UnlockAll()
 	}
-	m.UnlockAll()
 }
 
 func (m ContestantCacheMap) Lock(id string) {
@@ -351,7 +352,7 @@ func getTeams(teamIDs []int64) (map[int64]xsuportal.Team, error) {
 }
 
 func (*AdminService) ListClarifications(e echo.Context) error {
-	contestant, err := getCurrentContestant(e)
+	contestant, err := getCurrentContestant(e, false)
 	if err != nil {
 		return wrapError("check session", err)
 	}
@@ -393,7 +394,7 @@ func (*AdminService) ListClarifications(e echo.Context) error {
 }
 
 func (*AdminService) GetClarification(e echo.Context) error {
-	contestant, err := getCurrentContestant(e)
+	contestant, err := getCurrentContestant(e, false)
 	if err != nil {
 		return wrapError("check session", err)
 	}
@@ -436,7 +437,7 @@ func (*AdminService) GetClarification(e echo.Context) error {
 }
 
 func (*AdminService) RespondClarification(e echo.Context) error {
-	contestant, err := getCurrentContestant(e)
+	contestant, err := getCurrentContestant(e, false)
 	if err != nil {
 		return wrapError("check session", err)
 	}
@@ -525,7 +526,7 @@ type CommonService struct{}
 
 func (*CommonService) GetCurrentSession(e echo.Context) error {
 	res := &commonpb.GetCurrentSessionResponse{}
-	currentContestant, err := getCurrentContestant(e)
+	currentContestant, err := getCurrentContestant(e, false)
 	if err != nil {
 		return fmt.Errorf("get current contestant: %w", err)
 	}
@@ -573,11 +574,9 @@ func (*ContestantService) EnqueueBenchmarkJob(e echo.Context) error {
 	}
 	defer tx.Rollback()
 	// TODO: 中でgetCurrentContestantが呼ばれる
-	ok, contestantID, err := loginRequired(e, tx, &loginRequiredOption{Team: true})
-	if !ok {
+	if ok, err := loginRequired(e, tx, &loginRequiredOption{Team: true}); !ok {
 		return wrapError("check session", err)
 	}
-	defer contestantCache.Unlock(contestantID)
 	if ok, err := contestStatusRestricted(e, tx, resourcespb.Contest_STARTED, "競技時間外はベンチマークを実行できません"); !ok {
 		return wrapError("check contest status", err)
 	}
@@ -622,11 +621,9 @@ func (*ContestantService) EnqueueBenchmarkJob(e echo.Context) error {
 }
 
 func (*ContestantService) ListBenchmarkJobs(e echo.Context) error {
-	ok, contestantID, err := loginRequired(e, db, &loginRequiredOption{Team: true})
-	if !ok {
+	if ok, err := loginRequired(e, db, &loginRequiredOption{Team: true}); !ok {
 		return wrapError("check session", err)
 	}
-	defer contestantCache.Unlock(contestantID)
 	jobs, err := makeBenchmarkJobsPB(e, db, 0)
 	if err != nil {
 		return fmt.Errorf("make benchmark jobs: %w", err)
@@ -638,11 +635,9 @@ func (*ContestantService) ListBenchmarkJobs(e echo.Context) error {
 
 func (*ContestantService) GetBenchmarkJob(e echo.Context) error {
 	// TODO: 中でgetCurrentContestantが呼ばれる
-	ok, contestantID, err := loginRequired(e, db, &loginRequiredOption{Team: true})
-	if !ok {
+	if ok, err := loginRequired(e, db, &loginRequiredOption{Team: true}); !ok {
 		return wrapError("check session", err)
 	}
-	defer contestantCache.Unlock(contestantID)
 	id, err := strconv.Atoi(e.Param("id"))
 	if err != nil {
 		return fmt.Errorf("parse id: %w", err)
@@ -669,15 +664,13 @@ func (*ContestantService) GetBenchmarkJob(e echo.Context) error {
 
 func (*ContestantService) ListClarifications(e echo.Context) error {
 	// TODO: 中でgetCurrentContestantが呼ばれる
-	ok, contestantID, err := loginRequired(e, db, &loginRequiredOption{Team: true})
-	if !ok {
+	if ok, err := loginRequired(e, db, &loginRequiredOption{Team: true}); !ok {
 		return wrapError("check session", err)
 	}
-	defer contestantCache.Unlock(contestantID)
 	// TODO: 中でgetCurrentContestantが呼ばれる
 	team, _ := getCurrentTeam(e, db, false)
 	var clarifications []xsuportal.Clarification
-	err = db.Select(
+	err := db.Select(
 		&clarifications,
 		"SELECT * FROM `clarifications` WHERE `team_id` = ? OR `disclosed` = TRUE ORDER BY `id` DESC",
 		team.ID,
@@ -712,11 +705,9 @@ func (*ContestantService) ListClarifications(e echo.Context) error {
 
 func (*ContestantService) RequestClarification(e echo.Context) error {
 	// TODO: 中でgetCurrentContestantが呼ばれる
-	ok, contestantID, err := loginRequired(e, db, &loginRequiredOption{Team: true})
-	if !ok {
+	if ok, err := loginRequired(e, db, &loginRequiredOption{Team: true}); !ok {
 		return wrapError("check session", err)
 	}
-	defer contestantCache.Unlock(contestantID)
 	var req contestantpb.RequestClarificationRequest
 	if err := e.Bind(&req); err != nil {
 		return err
@@ -757,11 +748,9 @@ func (*ContestantService) RequestClarification(e echo.Context) error {
 // INFO: 2 秒以内にレスポンスを返す必要があります。
 func (*ContestantService) Dashboard(e echo.Context) error {
 	// TODO: 中でgetCurrentContestantが呼ばれる
-	ok, contestantID, err := loginRequired(e, db, &loginRequiredOption{Team: true})
-	if !ok {
+	if ok, err := loginRequired(e, db, &loginRequiredOption{Team: true}); !ok {
 		return wrapError("check session", err)
 	}
-	defer contestantCache.Unlock(contestantID)
 	// TODO: 中でgetCurrentContestantが呼ばれる
 	team, _ := getCurrentTeam(e, db, false)
 	res, err := makeLeaderboardPB(e, team.ID)
@@ -772,7 +761,7 @@ func (*ContestantService) Dashboard(e echo.Context) error {
 }
 
 func (*ContestantService) ListNotifications(e echo.Context) error {
-	contestant, err := getCurrentContestant(e)
+	contestant, err := getCurrentContestant(e, false)
 	if err != nil {
 		return wrapError("check session", err)
 	}
@@ -845,7 +834,7 @@ func (*ContestantService) ListNotifications(e echo.Context) error {
 }
 
 func (*ContestantService) SubscribeNotification(e echo.Context) error {
-	contestant, _ := getCurrentContestant(e)
+	contestant, _ := getCurrentContestant(e, false)
 	if ok, err := loginRequiredByContestant(e, contestant, &loginRequiredOption{Team: true}); !ok {
 		return wrapError("check session", err)
 	}
@@ -873,7 +862,7 @@ func (*ContestantService) SubscribeNotification(e echo.Context) error {
 }
 
 func (*ContestantService) UnsubscribeNotification(e echo.Context) error {
-	contestant, err := getCurrentContestant(e)
+	contestant, err := getCurrentContestant(e, false)
 	if err != nil {
 		return wrapError("check session", err)
 	}
@@ -1047,7 +1036,7 @@ func (*RegistrationService) GetRegistrationSession(e echo.Context) error {
 	res := &registrationpb.GetRegistrationSessionResponse{
 		Status: 0,
 	}
-	contestant, err := getCurrentContestant(e)
+	contestant, err := getCurrentContestant(e, false)
 	if err != nil {
 		return fmt.Errorf("get current contestant: %w", err)
 	}
@@ -1081,11 +1070,10 @@ func (*RegistrationService) CreateTeam(e echo.Context) error {
 	if err := e.Bind(&req); err != nil {
 		return err
 	}
-	ok, contestantID, err := loginRequired(e, db, &loginRequiredOption{})
-	if !ok {
+	if ok, err := loginRequired(e, db, &loginRequiredOption{}); !ok {
 		return wrapError("check session", err)
 	}
-	ok, err = contestStatusRestricted(e, db, resourcespb.Contest_REGISTRATION, "チーム登録期間ではありません")
+	ok, err := contestStatusRestricted(e, db, resourcespb.Contest_REGISTRATION, "チーム登録期間ではありません")
 	if !ok {
 		return wrapError("check contest status", err)
 	}
@@ -1102,7 +1090,6 @@ func (*RegistrationService) CreateTeam(e echo.Context) error {
 	if err != nil {
 		return fmt.Errorf("lock tables: %w", err)
 	}
-	defer contestantCache.Unlock(contestantID)
 	defer conn.ExecContext(ctx, "UNLOCK TABLES")
 
 	randomBytes := make([]byte, 64)
@@ -1144,7 +1131,7 @@ func (*RegistrationService) CreateTeam(e echo.Context) error {
 		return halt(e, http.StatusInternalServerError, "チームを登録できませんでした", nil)
 	}
 
-	contestant, _ := getCurrentContestant(e)
+	contestant, _ := getCurrentContestant(e, false)
 
 	_, err = conn.ExecContext(
 		ctx,
@@ -1199,11 +1186,10 @@ func (*RegistrationService) JoinTeam(e echo.Context) error {
 		return fmt.Errorf("begin tx: %w", err)
 	}
 	defer tx.Rollback()
-	ok, contestantID, err := loginRequired(e, tx, &loginRequiredOption{Lock: true})
-	if !ok {
+
+	if ok, err := loginRequired(e, tx, &loginRequiredOption{Lock: true}); !ok {
 		return wrapError("check session", err)
 	}
-	defer contestantCache.Unlock(contestantID)
 	if ok, err := contestStatusRestricted(e, tx, resourcespb.Contest_REGISTRATION, "チーム登録期間ではありません"); !ok {
 		return wrapError("check contest status", err)
 	}
@@ -1233,7 +1219,7 @@ func (*RegistrationService) JoinTeam(e echo.Context) error {
 		return halt(e, http.StatusBadRequest, "チーム人数の上限に達しています", nil)
 	}
 
-	contestant, _ := getCurrentContestant(e)
+	contestant, _ := getCurrentContestant(e, false)
 	_, err = tx.Exec(
 		"UPDATE `contestants` SET `team_id` = ?, `name` = ?, `student` = ? WHERE `id` = ? LIMIT 1",
 		req.TeamId,
@@ -1276,15 +1262,12 @@ func (*RegistrationService) UpdateRegistration(e echo.Context) error {
 	}
 	defer tx.Rollback()
 	// TODO: 中でgetCurrentContestantが呼ばれる
-	ok, contestantID, err := loginRequired(e, tx, &loginRequiredOption{Team: true, Lock: true})
-	if !ok {
+	if ok, err := loginRequired(e, tx, &loginRequiredOption{Team: true, Lock: true}); !ok {
 		return wrapError("check session", err)
 	}
-	defer contestantCache.Unlock(contestantID)
-
 	// TODO: 中でgetCurrentContestantが呼ばれる
 	team, _ := getCurrentTeam(e, tx, false)
-	contestant, _ := getCurrentContestant(e)
+	contestant, _ := getCurrentContestant(e, false)
 	if team.LeaderID.Valid && team.LeaderID.String == contestant.ID {
 		_, err := tx.Exec(
 			"UPDATE `teams` SET `name` = ?, `email_address` = ? WHERE `id` = ? LIMIT 1",
@@ -1330,7 +1313,7 @@ func (*RegistrationService) DeleteRegistration(e echo.Context) error {
 	}
 	defer tx.Rollback()
 
-	contestant, err := getCurrentContestant(e)
+	contestant, err := getCurrentContestant(e, false)
 	if err != nil {
 		return wrapError("check session", err)
 	}
@@ -1477,7 +1460,7 @@ func getXsuportalContext(e echo.Context) *XsuportalContext {
 	return xc.(*XsuportalContext)
 }
 
-func getCurrentContestant(e echo.Context) (*xsuportal.Contestant, error) {
+func getCurrentContestant(e echo.Context, lock bool) (*xsuportal.Contestant, error) {
 	xc := getXsuportalContext(e)
 	if xc.Contestant != nil {
 		return xc.Contestant, nil
@@ -1492,7 +1475,13 @@ func getCurrentContestant(e echo.Context) (*xsuportal.Contestant, error) {
 	}
 	var contestant xsuportal.Contestant
 	//query := "SELECT * FROM `contestants` WHERE `id` = ? LIMIT 1"
-	contestant, ok = contestantCache.Get(contestantID.(string))
+	if lock {
+		//query += " FOR UPDATE"
+		contestantCache.Lock(contestantID.(string))
+		contestantCache.GetWithoutLock(contestantID.(string))
+	} else {
+		contestant, ok = contestantCache.Get(contestantID.(string))
+	}
 	if !ok {
 		return nil, nil
 	}
@@ -1507,44 +1496,12 @@ func getCurrentContestant(e echo.Context) (*xsuportal.Contestant, error) {
 	return xc.Contestant, nil
 }
 
-func getCurrentContestantWithLock(e echo.Context) (*xsuportal.Contestant, string, error) {
-	xc := getXsuportalContext(e)
-	if xc.Contestant != nil {
-		return xc.Contestant, "", nil
-	}
-	sess, err := session.Get(SessionName, e)
-	if err != nil {
-		return nil, "", fmt.Errorf("get session: %w", err)
-	}
-	contestantID, ok := sess.Values["contestant_id"]
-	if !ok {
-		return nil, "", nil
-	}
-	var contestant xsuportal.Contestant
-	//query := "SELECT * FROM `contestants` WHERE `id` = ? LIMIT 1"
-	//query += " FOR UPDATE"
-	contestantCache.Lock(contestantID.(string))
-	contestantCache.GetWithoutLock(contestantID.(string))
-	if !ok {
-		return nil, contestantID.(string), nil
-	}
-	//err = sqlx.Get(db, &contestant, query, contestantID)
-	//if err == sql.ErrNoRows {
-	//	return nil, nil
-	//}
-	//if err != nil {
-	//	return nil, fmt.Errorf("query contestant: %w", err)
-	//}
-	xc.Contestant = &contestant
-	return xc.Contestant, contestantID.(string), nil
-}
-
 func getCurrentTeam(e echo.Context, db sqlx.Queryer, lock bool) (*xsuportal.Team, error) {
 	xc := getXsuportalContext(e)
 	if xc.Team != nil {
 		return xc.Team, nil
 	}
-	contestant, err := getCurrentContestant(e)
+	contestant, err := getCurrentContestant(e, false)
 	if err != nil {
 		return nil, fmt.Errorf("current contestant: %w", err)
 	}
@@ -1600,31 +1557,25 @@ type loginRequiredOption struct {
 	Lock bool
 }
 
-func loginRequired(e echo.Context, db sqlx.Queryer, option *loginRequiredOption) (bool, string, error) {
-	var contestant *xsuportal.Contestant
-	var contestantID string
-	var err error
-	if option.Lock {
-		contestant, contestantID, err = getCurrentContestantWithLock(e)
-	} else {
-		contestant, err = getCurrentContestant(e)
-	}
+func loginRequired(e echo.Context, db sqlx.Queryer, option *loginRequiredOption) (bool, error) {
+	contestant, err := getCurrentContestant(e, option.Lock)
 	if err != nil {
-		return false, contestantID, fmt.Errorf("current contestant: %w", err)
+		return false, fmt.Errorf("current contestant: %w", err)
 	}
 	if contestant == nil {
-		return false, contestantID, halt(e, http.StatusUnauthorized, "ログインが必要です", nil)
+		return false, halt(e, http.StatusUnauthorized, "ログインが必要です", nil)
 	}
 	if option.Team {
 		t, err := getCurrentTeam(e, db, option.Lock)
 		if err != nil {
-			return false, contestantID, fmt.Errorf("current team: %w", err)
+			return false, fmt.Errorf("current team: %w", err)
 		}
 		if t == nil {
-			return false, contestantID, halt(e, http.StatusForbidden, "参加登録が必要です", nil)
+			return false, halt(e, http.StatusForbidden, "参加登録が必要です", nil)
 		}
 	}
-	return true, contestantID, nil
+	contestantCache.Unlock(contestant.ID)
+	return true, nil
 }
 
 func loginRequiredByContestant(e echo.Context, contestant *xsuportal.Contestant, option *loginRequiredOption) (bool, error) {
