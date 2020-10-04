@@ -1572,7 +1572,6 @@ func loginRequired(e echo.Context, db sqlx.Queryer, option *loginRequiredOption)
 			return false, halt(e, http.StatusForbidden, "参加登録が必要です", nil)
 		}
 	}
-	contestantCache.Unlock(contestant.ID)
 	return true, nil
 }
 
