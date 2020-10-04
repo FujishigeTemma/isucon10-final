@@ -112,10 +112,10 @@ func (m ContestantCacheMap) SweepByTeamID(teamID int64) {
 	for i := range m {
 		s := m[i]
 
-		s.RLock()
+		m.LockAll()
 		for j := range s.contestants {
 			if s.contestants[j].TeamID.Int64 == teamID {
-				contestantCache.Set(s.contestants[j].ID, xsuportal.Contestant{
+				contestantCache.SetWithoutLock(s.contestants[j].ID, xsuportal.Contestant{
 					ID:       s.contestants[j].ID,
 					Password: s.contestants[j].Password,
 					TeamID: sql.NullInt64{
@@ -128,7 +128,7 @@ func (m ContestantCacheMap) SweepByTeamID(teamID int64) {
 				})
 			}
 		}
-		s.RUnlock()
+		m.UnlockAll()
 	}
 }
 
@@ -1477,9 +1477,11 @@ func getCurrentContestant(e echo.Context, lock bool) (*xsuportal.Contestant, err
 	//query := "SELECT * FROM `contestants` WHERE `id` = ? LIMIT 1"
 	if lock {
 		//query += " FOR UPDATE"
+		contestantCache.Lock(contestantID.(string))
+		contestantCache.GetWithoutLock(contestantID.(string))
+	} else {
 		contestant, ok = contestantCache.Get(contestantID.(string))
 	}
-	contestant, ok = contestantCache.GetWithoutLock(contestantID.(string))
 	if !ok {
 		return nil, nil
 	}
@@ -1572,6 +1574,7 @@ func loginRequired(e echo.Context, db sqlx.Queryer, option *loginRequiredOption)
 			return false, halt(e, http.StatusForbidden, "参加登録が必要です", nil)
 		}
 	}
+	contestantCache.Unlock(contestant.ID)
 	return true, nil
 }
 
