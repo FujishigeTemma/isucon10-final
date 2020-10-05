@@ -62,6 +62,8 @@ func main() {
 
 	srv.Binder = ProtoBinder{}
 
+	notifier = xsuportal.Notifier{}
+
 	db, _ = xsuportal.GetDB()
 
 	xsuportal.WaitDB(db)
@@ -634,6 +636,10 @@ func (*ContestantService) Dashboard(e echo.Context) error {
 }
 
 func (*ContestantService) ListNotifications(e echo.Context) error {
+	return writeProto(e, http.StatusOK, &contestantpb.ListNotificationsResponse{
+		Notifications:               nil,
+		LastAnsweredClarificationId: 0,
+	})
 	contestant, err := getCurrentContestant(e, db, false)
 	if err != nil {
 		return wrapError("check session", err)
