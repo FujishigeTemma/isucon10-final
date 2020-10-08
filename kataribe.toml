@@ -17,8 +17,8 @@ show_bytes = true
 percentiles = [ 50.0, 90.0, 95.0, 99.0 ]
 
 # for Nginx($request_time)
-scale = 0
-effective_digit = 3
+#scale = 0
+#effective_digit = 3
 
 # for Apache(%D) and Varnishncsa(%D)
 #scale = -6
@@ -28,18 +28,26 @@ effective_digit = 3
 #scale = 0
 #effective_digit = 4
 
+# for envoyproxy
+scale = -3
+effective_digit = 3
+log_format = '^\[([^\]]+)\] "((?:\\"|[^"])*)" (\d+) (\d+|-) (\d+) (\d+) (\d+) (\d+) .*$'
+request_index = 2
+status_index = 3
+bytes_index = 6
+duration_index = 7
 
 # combined + duration
 # Nginx example: '$remote_addr - $remote_user [$time_local] "$request" $status $body_bytes_sent "$http_referer" "$http_user_agent" $request_time'
 # Apache example: "%h %l %u %t \"%r\" %>s %b \"%{Referer}i\" \"%{User-Agent}i\" %D"
 # H2O example: "%h %l %u %t \"%r\" %s %b \"%{Referer}i\" \"%{User-agent}i\" %{duration}x"
 # Varnishncsa example: '%h %l %u %t "%r" %s %b "%{Referer}i" "%{User-agent}i" %D'
-log_format = '^([^ ]+) ([^ ]+) ([^ ]+) \[([^\]]+)\] "((?:\\"|[^"])*)" (\d+) (\d+|-) "((?:\\"|[^"])*)" "((?:\\"|[^"])*)" ([0-9.]+)$'
+#log_format = '^([^ ]+) ([^ ]+) ([^ ]+) \[([^\]]+)\] "((?:\\"|[^"])*)" (\d+) (\d+|-) "((?:\\"|[^"])*)" "((?:\\"|[^"])*)" ([0-9.]+)$'
 
-request_index = 5
-status_index = 6
-bytes_index = 7
-duration_index = 10
+#request_index = 5
+#status_index = 6
+#bytes_index = 7
+#duration_index = 10
 
 # Rack example: use Rack::CommonLogger, Logger.new("/tmp/app.log")
 #log_format = '^([^ ]+) ([^ ]+) ([^ ]+) \[([^\]]+)\] "((?:\\"|[^"])*)" (\d+) (\d+|-) ([0-9.]+)$'

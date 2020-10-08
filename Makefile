@@ -13,7 +13,7 @@ export DSTAT_MYSQL_HOST=$(DB_HOST)
 
 MYSQL_CMD:=mysql -h$(DB_HOST) -P$(DB_PORT) -u$(DB_USER) -p$(DB_PASS) $(DB_NAME)
 
-NGX_LOG:=/var/log/nginx/access.log
+NGX_LOG:=/var/log/envoy/access.log
 MYSQL_LOG:=/var/log/mysql/mysql-slow.log
 
 KATARIBE_CFG:=./kataribe.toml
@@ -82,10 +82,10 @@ stash-log:
 		sudo rm $(MYSQL_LOG) ; \
 	fi
 	@sudo systemctl restart mysql
-	# @if [ -f $(NGX_LOG) ]; then \
-	# 	sudo mv -f $(NGX_LOG) ~/logs/$(when)/ ; \
-	# fi
-	# @sudo systemctl restart nginx
+	@if [ -f $(NGX_LOG) ]; then \
+		sudo mv -f $(NGX_LOG) ~/logs/$(when)/ ; \
+	fi
+	@sudo systemctl restart envoy
 
 .PHONY: curl
 curl:
