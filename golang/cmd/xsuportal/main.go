@@ -1549,7 +1549,7 @@ func makeLeaderboardPB(e echo.Context, teamID int64) ([]byte, error) {
 	}
 	contestFinished := contestStatus.Status == resourcespb.Contest_FINISHED
 	contestFreezesAt := contestStatus.ContestFreezesAt
-	contestFrozen := !contestFinished && !contestFreezesAt.Before(time.Now().Truncate(time.Nanosecond))
+	contestFrozen := !contestFinished && !time.Now().Truncate(time.Nanosecond).Before(contestFreezesAt)
 
 	if contestFinished {
 		if c, ok := cacheStore.Get(FinishedDashBoardCacheKey); ok {
