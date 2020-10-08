@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-sql-driver/mysql"
@@ -49,12 +50,13 @@ const (
 	SessionName                = "xsucon_session"
 
 	AudienceDashBoardCacheKey = "audience_dashboard"
+	FinishedDashBoardCacheKey = "finished_dashboard"
 )
 
 var db *sqlx.DB
 var notifier xsuportal.Notifier
 var cacheStore = cache.New(800*time.Millisecond, 5*time.Minute)
-var dashboardGroup singleflight.Group
+var finishedDashboardMutex = sync.Mutex{}
 var contestStatus *xsuportal.ContestStatus
 
 func main() {
@@ -637,6 +639,17 @@ func (*ContestantService) Dashboard(e echo.Context) error {
 	if ok, err := loginRequired(e, db, &loginRequiredOption{Team: true}); !ok {
 		return wrapError("check session", err)
 	}
+
+	contestStatus, _ := getCurrentContestStatus(e, db)
+	contestFinished := contestStatus.Status == resourcespb.Contest_FINISHED
+	if contestFinished {
+		c, ok := cacheStore.Get(FinishedDashBoardCacheKey)
+		if ok {
+			e.Response().Header().Set("Expires", time.Now().AddDate(0, 0, 7).Format(http.TimeFormat))
+			return e.Blob(http.StatusOK, "application/vnd.google.protobuf", c.([]byte))
+		}
+	}
+
 	// TODO: 中でgetCurrentContestantが呼ばれる
 	team, _ := getCurrentTeam(e, db, false)
 	res, err := makeLeaderboardPB(e, team.ID)
@@ -1224,6 +1237,16 @@ func (*AudienceService) ListTeams(e echo.Context) error {
 // INFO: データの更新から最大 1 秒古い情報を返すことができます。ただし、ベンチマーカーが検知しない限りはそれより古い情報を返しても構いません。
 // INFO: 2 秒以内にレスポンスを返す必要があります。
 func (*AudienceService) Dashboard(e echo.Context) error {
+	contestStatus, _ := getCurrentContestStatus(e, db)
+	contestFinished := contestStatus.Status == resourcespb.Contest_FINISHED
+	if contestFinished {
+		c, ok := cacheStore.Get(FinishedDashBoardCacheKey)
+		if ok {
+			e.Response().Header().Set("Expires", time.Now().AddDate(0, 0, 7).Format(http.TimeFormat))
+			return e.Blob(http.StatusOK, "application/vnd.google.protobuf", c.([]byte))
+		}
+	}
+
 	if c, expiration, ok := cacheStore.GetWithExpiration(AudienceDashBoardCacheKey); ok {
 		// 残り時間はブラウザ側でキャッシュ
 		e.Response().Header().Set("Expires", expiration.Format(http.TimeFormat))
@@ -1516,6 +1539,18 @@ func makeLeaderboardPB(e echo.Context, teamID int64) ([]byte, error) {
 	contestFinished := contestStatus.Status == resourcespb.Contest_FINISHED
 	contestFreezesAt := contestStatus.ContestFreezesAt
 
+	if contestFinished {
+		if c, ok := cacheStore.Get(FinishedDashBoardCacheKey); ok {
+			return c.([]byte), nil
+		}
+
+		finishedDashboardMutex.Lock()
+		// 一個目のロック以外はこのキャッシュがとれるはず
+		if c, ok := cacheStore.Get(FinishedDashBoardCacheKey); ok {
+			return c.([]byte), nil
+		}
+	}
+
 	isSame := teamID == 0 || contestFinished || contestFreezesAt.Before(time.Now().Truncate(time.Nanosecond))
 
 	name := strconv.FormatBool(contestFinished) + contestFreezesAt.Format(time.Stamp)
@@ -1767,6 +1802,12 @@ func makeLeaderboardPB(e echo.Context, teamID int64) ([]byte, error) {
 	res, _ := proto.Marshal(&audiencepb.DashboardResponse{
 		Leaderboard: pb,
 	})
+
+	if contestFinished && err != nil {
+		cacheStore.Set(FinishedDashBoardCacheKey, res, cache.NoExpiration)
+		finishedDashboardMutex.Unlock()
+		return res, err
+	}
 
 	if isSame && err == nil {
 		cacheStore.Set(AudienceDashBoardCacheKey, res, 0)
