@@ -68,6 +68,12 @@ func main() {
 	xsuportal.WaitDB(db)
 	go xsuportal.PollDB(db)
 
+	var err error
+	contestStatus, err = getCurrentContestStatusFromDB(nil, db)
+	if err != nil {
+		log.Fatalf("get contest: %v", err)
+	}
+
 	srv.Use(session.Middleware(sessions.NewCookieStore([]byte("tagomoris"))))
 
 	srv.File("/", "public/audience.html")
@@ -1309,34 +1315,37 @@ func getCurrentTeam(e echo.Context, db sqlx.Queryer, lock bool) (*xsuportal.Team
 
 func getCurrentContestStatusFromDB(e echo.Context, db sqlx.Queryer) (*xsuportal.ContestStatus, error) {
 	var contestStatus xsuportal.ContestStatus
-	err := sqlx.Get(db, &contestStatus, "SELECT *, NOW(6) AS `current_time`, CASE WHEN NOW(6) < `registration_open_at` THEN 'standby' WHEN `registration_open_at` <= NOW(6) AND NOW(6) < `contest_starts_at` THEN 'registration' WHEN `contest_starts_at` <= NOW(6) AND NOW(6) < `contest_ends_at` THEN 'started' WHEN `contest_ends_at` <= NOW(6) THEN 'finished' ELSE 'unknown' END AS `status`, IF(`contest_starts_at` <= NOW(6) AND NOW(6) < `contest_freezes_at`, 1, 0) AS `frozen` FROM `contest_config`")
+	err := sqlx.Get(db, &contestStatus, "SELECT * FROM `contest_config`")
 	if err != nil {
 		return nil, fmt.Errorf("query contest status: %w", err)
-	}
-	statusStr := contestStatus.StatusStr
-	if e.Echo().Debug {
-		b, err := ioutil.ReadFile(DebugContestStatusFilePath)
-		if err == nil {
-			statusStr = string(b)
-		}
-	}
-	switch statusStr {
-	case "standby":
-		contestStatus.Status = resourcespb.Contest_STANDBY
-	case "registration":
-		contestStatus.Status = resourcespb.Contest_REGISTRATION
-	case "started":
-		contestStatus.Status = resourcespb.Contest_STARTED
-	case "finished":
-		contestStatus.Status = resourcespb.Contest_FINISHED
-	default:
-		return nil, fmt.Errorf("unexpected contest status: %q", contestStatus.StatusStr)
 	}
 	return &contestStatus, nil
 }
 
 func getCurrentContestStatus(e echo.Context, db sqlx.Queryer) (*xsuportal.ContestStatus, error) {
-	return contestStatus, nil
+	cs := *contestStatus
+
+	now := time.Now().Truncate(time.Second)
+
+	cs.CurrentTime = now
+
+	if now.Before(cs.RegistrationOpenAt) {
+		cs.StatusStr = "standby"
+		cs.Status = resourcespb.Contest_STANDBY
+	} else if now.Before(cs.ContestStartsAt) {
+		cs.StatusStr = "registration"
+		cs.Status = resourcespb.Contest_REGISTRATION
+	} else if now.Before(cs.ContestEndsAt) {
+		cs.StatusStr = "started"
+		cs.Status = resourcespb.Contest_STARTED
+	} else {
+		cs.StatusStr = "finished"
+		cs.Status = resourcespb.Contest_FINISHED
+	}
+
+	cs.Frozen = now.After(cs.ContestStartsAt) && now.Before(cs.ContestFreezesAt)
+
+	return &cs, nil
 }
 
 type loginRequiredOption struct {
