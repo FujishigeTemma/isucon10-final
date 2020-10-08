@@ -56,6 +56,7 @@ const (
 var db *sqlx.DB
 var notifier xsuportal.Notifier
 var cacheStore = cache.New(800*time.Millisecond, 5*time.Minute)
+var dashboardGroup singleflight.Group
 var finishedDashboardMutex = sync.Mutex{}
 var contestStatus *xsuportal.ContestStatus
 
