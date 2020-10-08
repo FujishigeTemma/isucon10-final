@@ -1686,7 +1686,7 @@ func makeLeaderboardPB(e echo.Context, teamID int64) ([]byte, error) {
 				"    WHERE\n" +
 				"      `finished_at` IS NOT NULL\n" +
 				"      -- score freeze\n" +
-				"      AND (`team_id` = ? OR (`team_id` != ? AND (? = TRUE OR `finished_at` < ?)))\n" +
+				"      AND (`team_id` = ? OR (`team_id` != ? AND `finished_at` < ?))\n" +
 				"    GROUP BY\n" +
 				"      `team_id`\n" +
 				"  ) `latest_score_job_ids` ON `latest_score_job_ids`.`team_id` = `teams`.`id`\n" +
@@ -1706,7 +1706,7 @@ func makeLeaderboardPB(e echo.Context, teamID int64) ([]byte, error) {
 				"        WHERE\n" +
 				"          `finished_at` IS NOT NULL\n" +
 				"          -- score freeze\n" +
-				"          AND (`team_id` = ? OR (`team_id` != ? AND (? = TRUE OR `finished_at` < ?)))\n" +
+				"          AND (`team_id` = ? OR (`team_id` != ? AND `finished_at` < ?))\n" +
 				"        GROUP BY\n" +
 				"          `team_id`\n" +
 				"      ) `best_scores`\n" +
@@ -1729,7 +1729,7 @@ func makeLeaderboardPB(e echo.Context, teamID int64) ([]byte, error) {
 				"ORDER BY\n" +
 				"  `latest_score` DESC,\n" +
 				"  `latest_score_marked_at` ASC\n"
-			err = tx.Select(&leaderboard, query, teamID, teamID, contestFinished, contestFreezesAt, teamID, teamID, contestFinished, contestFreezesAt)
+			err = tx.Select(&leaderboard, query, teamID, teamID, contestFreezesAt, teamID, teamID, contestFreezesAt)
 			if err != sql.ErrNoRows && err != nil {
 				return nil, fmt.Errorf("select leaderboard: %w", err)
 			}
@@ -1746,11 +1746,11 @@ func makeLeaderboardPB(e echo.Context, teamID int64) ([]byte, error) {
 				"  AND (\n" +
 				"    `finished_at` IS NOT NULL\n" +
 				"    -- score freeze\n" +
-				"    AND (`team_id` = ? OR (`team_id` != ? AND (? = TRUE OR `finished_at` < ?)))\n" +
+				"    AND (`team_id` = ? OR (`team_id` != ? AND `finished_at` < ?))\n" +
 				"  )\n" +
 				"ORDER BY\n" +
 				"  `finished_at`"
-			err = tx.Select(&jobResults, jobResultsQuery, teamID, teamID, contestFinished, contestFreezesAt)
+			err = tx.Select(&jobResults, jobResultsQuery, teamID, teamID, contestFreezesAt)
 			if err != sql.ErrNoRows && err != nil {
 				return nil, fmt.Errorf("select job results: %w", err)
 			}
