@@ -1516,7 +1516,7 @@ func makeLeaderboardPB(e echo.Context, teamID int64) ([]byte, error) {
 	contestFinished := contestStatus.Status == resourcespb.Contest_FINISHED
 	contestFreezesAt := contestStatus.ContestFreezesAt
 
-	isSame := teamID == 0 || contestFinished || contestFreezesAt.Before(time.Now())
+	isSame := teamID == 0 || contestFinished || contestFreezesAt.Before(time.Now().Truncate(time.Nanosecond))
 
 	name := strconv.FormatBool(contestFinished) + contestFreezesAt.Format(time.Stamp)
 	if !isSame {
