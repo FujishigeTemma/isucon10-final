@@ -1554,9 +1554,9 @@ func makeLeaderboardPB(e echo.Context, teamID int64) ([]byte, error) {
 
 	isSame := teamID == 0 || contestFinished || contestFreezesAt.Before(time.Now().Truncate(time.Nanosecond))
 
-	name := strconv.FormatBool(contestFinished) + contestFreezesAt.Format(time.Stamp)
+	name := "0"
 	if !isSame {
-		name = strconv.FormatBool(contestFinished) + contestFreezesAt.Format(time.Stamp) + strconv.FormatInt(teamID, 10)
+		name = strconv.FormatInt(teamID, 10)
 	}
 
 	v, err, _ := dashboardGroup.Do(name, func() (interface{}, error) {
