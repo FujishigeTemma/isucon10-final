@@ -1326,7 +1326,7 @@ func getCurrentContestStatusFromDB(e echo.Context, db sqlx.Queryer) (*xsuportal.
 func getCurrentContestStatus(e echo.Context, db sqlx.Queryer) (*xsuportal.ContestStatus, error) {
 	cs := *contestStatus
 
-	now := time.Now().Truncate(time.Second)
+	now := time.Now().Truncate(time.Nanosecond)
 
 	cs.CurrentTime = now
 
@@ -1344,7 +1344,7 @@ func getCurrentContestStatus(e echo.Context, db sqlx.Queryer) (*xsuportal.Contes
 		cs.Status = resourcespb.Contest_FINISHED
 	}
 
-	cs.Frozen = now.After(cs.ContestStartsAt) && now.Before(cs.ContestFreezesAt)
+	cs.Frozen = (now.After(cs.ContestStartsAt) || now.Equal(cs.ContestStartsAt)) && now.Before(cs.ContestFreezesAt)
 
 	return &cs, nil
 }
