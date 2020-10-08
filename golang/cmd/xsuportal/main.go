@@ -1248,9 +1248,16 @@ func (*AudienceService) Dashboard(e echo.Context) error {
 		}
 	}
 
+	contestFrozen := !contestFinished && !time.Now().Truncate(time.Nanosecond).Before(contestStatus.ContestFreezesAt)
+	if contestFrozen {
+		e.Response().Header().Set("Expires", contestStatus.ContestEndsAt.Format(http.TimeFormat))
+	}
+
 	if c, expiration, ok := cacheStore.GetWithExpiration(AudienceDashBoardCacheKey); ok {
-		// 残り時間はブラウザ側でキャッシュ
-		e.Response().Header().Set("Expires", expiration.Format(http.TimeFormat))
+		if !contestFrozen{
+			// 残り時間はブラウザ側でキャッシュ
+			e.Response().Header().Set("Expires", expiration.Format(http.TimeFormat))
+		}
 
 		return e.Blob(http.StatusOK, "application/vnd.google.protobuf", c.([]byte))
 	}
