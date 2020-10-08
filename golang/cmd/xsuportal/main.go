@@ -10,6 +10,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -215,7 +216,7 @@ func (*AdminService) Initialize(e echo.Context) error {
 }
 
 func getTeams(teamIDs []int64) (map[int64]xsuportal.Team, error) {
-	sql, params, err  := sqlx.In(
+	sql, params, err := sqlx.In(
 		"SELECT * FROM `teams` WHERE `id` IN (?)",
 		teamIDs,
 	)
