@@ -50,6 +50,7 @@ const (
 	SessionName                = "xsucon_session"
 
 	AudienceDashBoardCacheKey = "audience_dashboard"
+	FrozenDashBoardCacheKey   = "frozen_dashboard"
 	FinishedDashBoardCacheKey = "finished_dashboard"
 )
 
@@ -57,6 +58,11 @@ var db *sqlx.DB
 var notifier xsuportal.Notifier
 var cacheStore = cache.New(800*time.Millisecond, 5*time.Minute)
 var dashboardGroup singleflight.Group
+var frozenAllDashboardOnce sync.Once
+var frozenAllDashboard *struct {
+	leaderboard []xsuportal.LeaderBoardTeam
+	jobResults  []xsuportal.JobResult
+}
 var finishedDashboardMutex = sync.Mutex{}
 var contestStatus *xsuportal.ContestStatus
 
@@ -1539,6 +1545,7 @@ func makeLeaderboardPB(e echo.Context, teamID int64) ([]byte, error) {
 	}
 	contestFinished := contestStatus.Status == resourcespb.Contest_FINISHED
 	contestFreezesAt := contestStatus.ContestFreezesAt
+	contestFrozen := !contestFinished && !contestFreezesAt.Before(time.Now().Truncate(time.Nanosecond))
 
 	if contestFinished {
 		if c, ok := cacheStore.Get(FinishedDashBoardCacheKey); ok {
@@ -1552,14 +1559,301 @@ func makeLeaderboardPB(e echo.Context, teamID int64) ([]byte, error) {
 		}
 	}
 
-	isSame := teamID == 0 || contestFinished || contestFreezesAt.Before(time.Now().Truncate(time.Nanosecond))
+	isSame := teamID == 0 || !contestFrozen
 
 	name := "0"
 	if !isSame {
 		name = strconv.FormatInt(teamID, 10)
 	}
 
-	v, err, _ := dashboardGroup.Do(name, func() (interface{}, error) {
+	if contestFrozen {
+		if isSame {
+			if res, ok := cacheStore.Get(FrozenDashBoardCacheKey); ok {
+				return res.([]byte), nil
+			}
+		}
+
+		frozenAllDashboardOnce.Do(func() {
+			tx, err := db.Beginx()
+			if err != nil {
+				fmt.Printf("begin tx: %v\n", err)
+				return
+			}
+			defer tx.Rollback()
+
+			var leaderboard []xsuportal.LeaderBoardTeam
+			var jobResults []xsuportal.JobResult
+			query := "SELECT\n" +
+				"  `teams`.`id` AS `id`,\n" +
+				"  `teams`.`name` AS `name`,\n" +
+				"  `teams`.`leader_id` AS `leader_id`,\n" +
+				"  `teams`.`withdrawn` AS `withdrawn`,\n" +
+				"  `team_student_flags`.`student` AS `student`,\n" +
+				"  (`best_score_jobs`.`score_raw` - `best_score_jobs`.`score_deduction`) AS `best_score`,\n" +
+				"  `best_score_jobs`.`started_at` AS `best_score_started_at`,\n" +
+				"  `best_score_jobs`.`finished_at` AS `best_score_marked_at`,\n" +
+				"  (`latest_score_jobs`.`score_raw` - `latest_score_jobs`.`score_deduction`) AS `latest_score`,\n" +
+				"  `latest_score_jobs`.`started_at` AS `latest_score_started_at`,\n" +
+				"  `latest_score_jobs`.`finished_at` AS `latest_score_marked_at`,\n" +
+				"  `latest_score_job_ids`.`finish_count` AS `finish_count`\n" +
+				"FROM\n" +
+				"  `teams`\n" +
+				"  -- latest scores\n" +
+				"  LEFT JOIN (\n" +
+				"    SELECT\n" +
+				"      MAX(`id`) AS `id`,\n" +
+				"      `team_id`,\n" +
+				"      COUNT(*) AS `finish_count`\n" +
+				"    FROM\n" +
+				"      `benchmark_jobs`\n" +
+				"    WHERE\n" +
+				"      `finished_at` IS NOT NULL\n" +
+				"      -- score freeze\n" +
+				"      AND `finished_at` < ?\n" +
+				"    GROUP BY\n" +
+				"      `team_id`\n" +
+				"  ) `latest_score_job_ids` ON `latest_score_job_ids`.`team_id` = `teams`.`id`\n" +
+				"  LEFT JOIN `benchmark_jobs` `latest_score_jobs` ON `latest_score_job_ids`.`id` = `latest_score_jobs`.`id`\n" +
+				"  -- best scores\n" +
+				"  LEFT JOIN (\n" +
+				"    SELECT\n" +
+				"      MAX(`j`.`id`) AS `id`,\n" +
+				"      `j`.`team_id` AS `team_id`\n" +
+				"    FROM\n" +
+				"      (\n" +
+				"        SELECT\n" +
+				"          `team_id`,\n" +
+				"          MAX(`score_raw` - `score_deduction`) AS `score`\n" +
+				"        FROM\n" +
+				"          `benchmark_jobs`\n" +
+				"        WHERE\n" +
+				"          `finished_at` IS NOT NULL\n" +
+				"          -- score freeze\n" +
+				"          AND `finished_at` < ?\n" +
+				"        GROUP BY\n" +
+				"          `team_id`\n" +
+				"      ) `best_scores`\n" +
+				"      LEFT JOIN `benchmark_jobs` `j` ON (`j`.`score_raw` - `j`.`score_deduction`) = `best_scores`.`score`\n" +
+				"        AND `j`.`team_id` = `best_scores`.`team_id`\n" +
+				"    GROUP BY\n" +
+				"      `j`.`team_id`\n" +
+				"  ) `best_score_job_ids` ON `best_score_job_ids`.`team_id` = `teams`.`id`\n" +
+				"  LEFT JOIN `benchmark_jobs` `best_score_jobs` ON `best_score_jobs`.`id` = `best_score_job_ids`.`id`\n" +
+				"  -- check student teams\n" +
+				"  LEFT JOIN (\n" +
+				"    SELECT\n" +
+				"      `team_id`,\n" +
+				"      (SUM(`student`) = COUNT(*)) AS `student`\n" +
+				"    FROM\n" +
+				"      `contestants`\n" +
+				"    GROUP BY\n" +
+				"      `contestants`.`team_id`\n" +
+				"  ) `team_student_flags` ON `team_student_flags`.`team_id` = `teams`.`id`\n" +
+				"ORDER BY\n" +
+				"  `latest_score` DESC,\n" +
+				"  `latest_score_marked_at` ASC\n"
+			err = tx.Select(&leaderboard, query, contestFreezesAt, contestFreezesAt)
+			if err != sql.ErrNoRows && err != nil {
+				fmt.Printf("select leaderboard: %v\n", err)
+				return
+			}
+
+			jobResultsQuery := "SELECT\n" +
+				"  `team_id` AS `team_id`,\n" +
+				"  (`score_raw` - `score_deduction`) AS `score`,\n" +
+				"  `started_at` AS `started_at`,\n" +
+				"  `finished_at` AS `finished_at`\n" +
+				"FROM\n" +
+				"  `benchmark_jobs`\n" +
+				"WHERE\n" +
+				"  `started_at` IS NOT NULL\n" +
+				"  AND (\n" +
+				"    `finished_at` IS NOT NULL\n" +
+				"    -- score freeze\n" +
+				"    AND `finished_at` < ?\n" +
+				"  )\n" +
+				"ORDER BY\n" +
+				"  `finished_at`"
+			err = tx.Select(&jobResults, jobResultsQuery, contestFreezesAt)
+			if err != sql.ErrNoRows && err != nil {
+				fmt.Printf("select job results: %v\n", err)
+				return
+			}
+
+			if err := tx.Commit(); err != nil {
+				fmt.Printf("commit tx: %v\n", err)
+				return
+			}
+
+			frozenAllDashboard = &struct {
+				leaderboard []xsuportal.LeaderBoardTeam
+				jobResults  []xsuportal.JobResult
+			}{
+				leaderboard: leaderboard,
+				jobResults:  jobResults,
+			}
+		})
+
+		if !isSame {
+			dashboard := *frozenAllDashboard
+
+			v, err, _ := dashboardGroup.Do("frozen"+name, func() (interface{}, error) {
+				tx, err := db.Beginx()
+				if err != nil {
+					return nil, fmt.Errorf("begin tx: %w", err)
+				}
+				defer tx.Rollback()
+
+				var leaderboardTeam xsuportal.LeaderBoardTeam
+				var jobResults []xsuportal.JobResult
+				query := "SELECT\n" +
+					"  `teams`.`id` AS `id`,\n" +
+					"  `teams`.`name` AS `name`,\n" +
+					"  `teams`.`leader_id` AS `leader_id`,\n" +
+					"  `teams`.`withdrawn` AS `withdrawn`,\n" +
+					"  `team_student_flags`.`student` AS `student`,\n" +
+					"  (`best_score_jobs`.`score_raw` - `best_score_jobs`.`score_deduction`) AS `best_score`,\n" +
+					"  `best_score_jobs`.`started_at` AS `best_score_started_at`,\n" +
+					"  `best_score_jobs`.`finished_at` AS `best_score_marked_at`,\n" +
+					"  (`latest_score_jobs`.`score_raw` - `latest_score_jobs`.`score_deduction`) AS `latest_score`,\n" +
+					"  `latest_score_jobs`.`started_at` AS `latest_score_started_at`,\n" +
+					"  `latest_score_jobs`.`finished_at` AS `latest_score_marked_at`,\n" +
+					"  `latest_score_job_ids`.`finish_count` AS `finish_count`\n" +
+					"FROM\n" +
+					"  `teams`\n" +
+					"  -- latest scores\n" +
+					"  LEFT JOIN (\n" +
+					"    SELECT\n" +
+					"      MAX(`id`) AS `id`,\n" +
+					"      `team_id`,\n" +
+					"      COUNT(*) AS `finish_count`\n" +
+					"    FROM\n" +
+					"      `benchmark_jobs`\n" +
+					"    WHERE\n" +
+					"      `finished_at` IS NOT NULL\n" +
+					"      -- score freeze\n" +
+					"      AND `team_id` = ?\n" +
+					"    GROUP BY\n" +
+					"      `team_id`\n" +
+					"  ) `latest_score_job_ids` ON `latest_score_job_ids`.`team_id` = `teams`.`id`\n" +
+					"  LEFT JOIN `benchmark_jobs` `latest_score_jobs` ON `latest_score_job_ids`.`id` = `latest_score_jobs`.`id`\n" +
+					"  -- best scores\n" +
+					"  LEFT JOIN (\n" +
+					"    SELECT\n" +
+					"      MAX(`j`.`id`) AS `id`,\n" +
+					"      `j`.`team_id` AS `team_id`\n" +
+					"    FROM\n" +
+					"      (\n" +
+					"        SELECT\n" +
+					"          `team_id`,\n" +
+					"          MAX(`score_raw` - `score_deduction`) AS `score`\n" +
+					"        FROM\n" +
+					"          `benchmark_jobs`\n" +
+					"        WHERE\n" +
+					"          `finished_at` IS NOT NULL\n" +
+					"          -- score freeze\n" +
+					"          AND `team_id` = ?\n" +
+					"        GROUP BY\n" +
+					"          `team_id`\n" +
+					"      ) `best_scores`\n" +
+					"      LEFT JOIN `benchmark_jobs` `j` ON (`j`.`score_raw` - `j`.`score_deduction`) = `best_scores`.`score`\n" +
+					"        AND `j`.`team_id` = `best_scores`.`team_id`\n" +
+					"    GROUP BY\n" +
+					"      `j`.`team_id`\n" +
+					"  ) `best_score_job_ids` ON `best_score_job_ids`.`team_id` = `teams`.`id`\n" +
+					"  LEFT JOIN `benchmark_jobs` `best_score_jobs` ON `best_score_jobs`.`id` = `best_score_job_ids`.`id`\n" +
+					"  -- check student teams\n" +
+					"  LEFT JOIN (\n" +
+					"    SELECT\n" +
+					"      `team_id`,\n" +
+					"      (SUM(`student`) = COUNT(*)) AS `student`\n" +
+					"    FROM\n" +
+					"      `contestants`\n" +
+					"    GROUP BY\n" +
+					"      `contestants`.`team_id`\n" +
+					"  ) `team_student_flags` ON `team_student_flags`.`team_id` = `teams`.`id`\n" +
+					"ORDER BY\n" +
+					"  `latest_score` DESC,\n" +
+					"  `latest_score_marked_at` ASC\n"
+				err = tx.Get(&leaderboardTeam, query, teamID, teamID)
+				if err != sql.ErrNoRows && err != nil {
+					return nil, fmt.Errorf("select leaderboard: %w", err)
+				}
+
+				jobResultsQuery := "SELECT\n" +
+					"  `team_id` AS `team_id`,\n" +
+					"  (`score_raw` - `score_deduction`) AS `score`,\n" +
+					"  `started_at` AS `started_at`,\n" +
+					"  `finished_at` AS `finished_at`\n" +
+					"FROM\n" +
+					"  `benchmark_jobs`\n" +
+					"WHERE\n" +
+					"  `started_at` IS NOT NULL\n" +
+					"  AND (\n" +
+					"    `finished_at` IS NOT NULL\n" +
+					"    -- score freeze\n" +
+					"    AND `team_id` = ?\n" +
+					"  )\n" +
+					"ORDER BY\n" +
+					"  `finished_at`"
+				err = tx.Select(&jobResults, jobResultsQuery, teamID)
+				if err != sql.ErrNoRows && err != nil {
+					return nil, fmt.Errorf("select job results: %w", err)
+				}
+
+				if err := tx.Commit(); err != nil {
+					return nil, fmt.Errorf("commit tx: %w", err)
+				}
+
+				teamGraphScores := make(map[int64][]*resourcespb.Leaderboard_LeaderboardItem_LeaderboardScore)
+				for _, jobResult := range frozenAllDashboard.jobResults {
+					teamGraphScores[jobResult.TeamID] = append(teamGraphScores[jobResult.TeamID], &resourcespb.Leaderboard_LeaderboardItem_LeaderboardScore{
+						Score:     jobResult.Score,
+						StartedAt: timestamppb.New(jobResult.StartedAt),
+						MarkedAt:  timestamppb.New(jobResult.FinishedAt),
+					})
+				}
+				pb := &resourcespb.Leaderboard{}
+				for _, team := range frozenAllDashboard.leaderboard {
+					t, _ := makeTeamPB(db, team.Team(), false, false)
+					item := &resourcespb.Leaderboard_LeaderboardItem{
+						Scores: teamGraphScores[team.ID],
+						BestScore: &resourcespb.Leaderboard_LeaderboardItem_LeaderboardScore{
+							Score:     team.BestScore.Int64,
+							StartedAt: toTimestamp(team.BestScoreStartedAt),
+							MarkedAt:  toTimestamp(team.BestScoreMarkedAt),
+						},
+						LatestScore: &resourcespb.Leaderboard_LeaderboardItem_LeaderboardScore{
+							Score:     team.LatestScore.Int64,
+							StartedAt: toTimestamp(team.LatestScoreStartedAt),
+							MarkedAt:  toTimestamp(team.LatestScoreMarkedAt),
+						},
+						Team:        t,
+						FinishCount: team.FinishCount.Int64,
+					}
+					if team.Student.Valid && team.Student.Bool {
+						pb.StudentTeams = append(pb.StudentTeams, item)
+					} else {
+						pb.GeneralTeams = append(pb.GeneralTeams, item)
+					}
+					pb.Teams = append(pb.Teams, item)
+				}
+			})
+			pb := v.(*resourcespb.Leaderboard)
+		}
+
+		// TODO: sync.Poolでbyte使いまわす
+		res, _ := proto.Marshal(&audiencepb.DashboardResponse{
+			Leaderboard: pb,
+		})
+
+		if isSame {
+			cacheStore.Set(FrozenDashBoardCacheKey, res, cache.NoExpiration)
+		}
+		return res, err
+	}
+
+	v, err, _ := dashboardGroup.Do("all"+name, func() (interface{}, error) {
 		tx, err := db.Beginx()
 		if err != nil {
 			return nil, fmt.Errorf("begin tx: %w", err)
