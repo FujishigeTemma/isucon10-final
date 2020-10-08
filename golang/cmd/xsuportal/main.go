@@ -1819,10 +1819,11 @@ func makeLeaderboardPB(e echo.Context, teamID int64) ([]byte, error) {
 				"    GROUP BY\n" +
 				"      `contestants`.`team_id`\n" +
 				"  ) `team_student_flags` ON `team_student_flags`.`team_id` = `teams`.`id`\n" +
+				"  WHERE `teams`.`id` = ?" +
 				"ORDER BY\n" +
 				"  `latest_score` DESC,\n" +
 				"  `latest_score_marked_at` ASC\n"
-			err = tx.Get(&leaderboardTeam, query, teamID, teamID)
+			err = tx.Get(&leaderboardTeam, query, teamID, teamID, teamID)
 			if err != sql.ErrNoRows && err != nil {
 				return nil, fmt.Errorf("select leaderboard: %w", err)
 			}
