@@ -1791,18 +1791,20 @@ func makeLeaderboardPB(e echo.Context, teamID int64) ([]byte, error) {
 			}
 			pb.Teams = append(pb.Teams, item)
 		}
-		return pb, nil
+
+		// TODO: sync.Poolでbyte使いまわす
+		res, _ := proto.Marshal(&audiencepb.DashboardResponse{
+			Leaderboard: pb,
+		})
+
+		return res, nil
 	})
-	pb := v.(*resourcespb.Leaderboard)
 
 	if err != nil {
 		return nil, err
 	}
 
-	// TODO: sync.Poolでbyte使いまわす
-	res, _ := proto.Marshal(&audiencepb.DashboardResponse{
-		Leaderboard: pb,
-	})
+	res := v.([]byte)
 
 	if contestFinished && err != nil {
 		cacheStore.Set(FinishedDashBoardCacheKey, res, cache.NoExpiration)
