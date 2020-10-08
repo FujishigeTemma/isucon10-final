@@ -1571,7 +1571,7 @@ func makeLeaderboardPB(e echo.Context, teamID int64) ([]byte, error) {
 		var leaderboard []xsuportal.LeaderBoardTeam
 		var jobResults []xsuportal.JobResult
 		if isSame {
-			query := "SELECT HIGH_PRIORITY\n" +
+			query := "SELECT\n" +
 				"  `teams`.`id` AS `id`,\n" +
 				"  `teams`.`name` AS `name`,\n" +
 				"  `teams`.`leader_id` AS `leader_id`,\n" +
@@ -1641,7 +1641,7 @@ func makeLeaderboardPB(e echo.Context, teamID int64) ([]byte, error) {
 				return nil, fmt.Errorf("select leaderboard: %w", err)
 			}
 
-			jobResultsQuery := "SELECT HIGH_PRIORITY\n" +
+			jobResultsQuery := "SELECT\n" +
 				"  `team_id` AS `team_id`,\n" +
 				"  (`score_raw` - `score_deduction`) AS `score`,\n" +
 				"  `started_at` AS `started_at`,\n" +
@@ -1660,7 +1660,7 @@ func makeLeaderboardPB(e echo.Context, teamID int64) ([]byte, error) {
 				return nil, fmt.Errorf("select job results: %w", err)
 			}
 		} else {
-			query := "SELECT HIGH_PRIORITY\n" +
+			query := "SELECT\n" +
 				"  `teams`.`id` AS `id`,\n" +
 				"  `teams`.`name` AS `name`,\n" +
 				"  `teams`.`leader_id` AS `leader_id`,\n" +
@@ -1734,7 +1734,7 @@ func makeLeaderboardPB(e echo.Context, teamID int64) ([]byte, error) {
 				return nil, fmt.Errorf("select leaderboard: %w", err)
 			}
 
-			jobResultsQuery := "SELECT HIGH_PRIORITY\n" +
+			jobResultsQuery := "SELECT\n" +
 				"  `team_id` AS `team_id`,\n" +
 				"  (`score_raw` - `score_deduction`) AS `score`,\n" +
 				"  `started_at` AS `started_at`,\n" +
