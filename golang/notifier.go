@@ -187,8 +187,9 @@ func (n *Notifier) NotifyClarificationAnswered(db sqlx.Ext, c *Clarification, up
 			}
 			err = SendWebPush(n.options.VAPIDPrivateKey, n.options.VAPIDPublicKey, notificationPB, &info)
 			if err != nil {
-				fmt.Printf("is to team: %#v", !c.Disclosed.Valid || !c.Disclosed.Bool)
-				fmt.Printf("err in sendwebpush: %#v", err)
+				fmt.Printf("is to team: %#v\n", !c.Disclosed.Valid || !c.Disclosed.Bool)
+				fmt.Printf("err in sendwebpush: %v\n", err)
+				return err
 			}
 		}
 	}
