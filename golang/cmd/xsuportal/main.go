@@ -69,18 +69,30 @@ func (s *UnanswerdClarification) Store(key int64, value xsuportal.Clarification)
 	s.s.Store(key, value)
 }
 
-func (s *UnanswerdClarification) Load(key int64) (xsuportal.Clarification, error) {
+func (s *UnanswerdClarification) Load(tx *sqlx.Tx, key int64) (xsuportal.Clarification, error) {
 	v, ok := s.s.Load(key)
 	if !ok {
-		return xsuportal.Clarification{}, fmt.Errorf("not found")
+		var clarification xsuportal.Clarification
+		err := tx.Get(
+			&clarification,
+			"SELECT * FROM `clarifications` WHERE `id` = ? LIMIT 1",
+			key,
+		)
+		if err != sql.ErrNoRows {
+			return xsuportal.Clarification{}, fmt.Errorf("not found")
+		}
+		if err != nil {
+			return xsuportal.Clarification{}, fmt.Errorf("get clarification: %w", err)
+		}
+		return clarification, nil
 	}
 
-	t, ok := v.(xsuportal.Clarification)
+	c, ok := v.(xsuportal.Clarification)
 	if !ok {
 		return xsuportal.Clarification{}, fmt.Errorf("stored type is invalid")
 	}
 
-	return t, nil
+	return c, nil
 }
 
 func (s *UnanswerdClarification) Delete(key int64) {
@@ -395,7 +407,7 @@ func (*AdminService) RespondClarification(e echo.Context) error {
 		return fmt.Errorf("update clarification: %w", err)
 	}
 
-	clarification, err := unanswerdClarification.Load(int64(id))
+	clarification, err := unanswerdClarification.Load(tx, int64(id))
 	if err != nil {
 		return fmt.Errorf("get clarification: %w", err)
 	}
