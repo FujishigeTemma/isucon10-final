@@ -180,6 +180,7 @@ func (n *Notifier) NotifyClarificationAnswered(db sqlx.Ext, c *Clarification, up
 }
 
 func (n *Notifier) NotifyBenchmarkJobFinished(db sqlx.Ext, job *BenchmarkJob) error {
+	fmt.Println("start webpush (bench)")
 	var contestants []struct {
 		ID     string `db:"id"`
 		TeamID int64  `db:"team_id"`
