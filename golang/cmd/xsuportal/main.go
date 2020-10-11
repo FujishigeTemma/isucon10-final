@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-sql-driver/mysql"
@@ -55,6 +56,37 @@ var db *sqlx.DB
 var notifier xsuportal.Notifier
 var cacheStore = cache.New(900*time.Millisecond, 5*time.Minute)
 var dashboardGroup singleflight.Group
+var unanswerdClarification = NewUnanswerdClarification()
+
+type UnanswerdClarification struct {
+	s sync.Map
+}
+
+func NewUnanswerdClarification() UnanswerdClarification {
+	return UnanswerdClarification{}
+}
+
+func (s *UnanswerdClarification) Store(key int64, value xsuportal.Clarification) {
+	s.s.Store(key, value)
+}
+
+func (s *UnanswerdClarification) Load(key int64) (xsuportal.Clarification, error) {
+	v, ok := s.s.Load(key)
+	if !ok {
+		return xsuportal.Clarification{}, fmt.Errorf("not found")
+	}
+
+	t, ok := v.(xsuportal.Clarification)
+	if !ok {
+		return xsuportal.Clarification{}, fmt.Errorf("stored type is invalid")
+	}
+
+	return t, nil
+}
+
+func (s *UnanswerdClarification) Delete(key int64) {
+	s.s.Delete(key)
+}
 
 func main() {
 	srv := echo.New()
@@ -363,16 +395,12 @@ func (*AdminService) RespondClarification(e echo.Context) error {
 	if err != nil {
 		return fmt.Errorf("update clarification: %w", err)
 	}
-	// TODO: とらずに生成できる?
-	var clarification xsuportal.Clarification
-	err = tx.Get(
-		&clarification,
-		"SELECT * FROM `clarifications` WHERE `id` = ? LIMIT 1",
-		id,
-	)
+
+	clarification, err := unanswerdClarification.Load(int64(id))
 	if err != nil {
 		return fmt.Errorf("get clarification: %w", err)
 	}
+
 	var team xsuportal.Team
 	err = tx.Get(
 		&team,
@@ -389,6 +417,9 @@ func (*AdminService) RespondClarification(e echo.Context) error {
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit tx: %w", err)
 	}
+
+	unanswerdClarification.Delete(int64(id))
+
 	updated := wasAnswered && wasDisclosed == clarification.Disclosed
 	if err := notifier.NotifyClarificationAnswered(db, &clarification, updated); err != nil {
 		return fmt.Errorf("notify clarification answered: %w", err)
@@ -595,20 +626,39 @@ func (*ContestantService) RequestClarification(e echo.Context) error {
 	defer tx.Rollback()
 	// TODO: 中でgetCurrentContestantが呼ばれる
 	team, _ := getCurrentTeam(e, tx, false)
-	_, err = tx.Exec(
-		"INSERT INTO `clarifications` (`team_id`, `question`, `created_at`, `updated_at`) VALUES (?, ?, NOW(6), NOW(6))",
+	time := time.Now().Truncate(time.Millisecond)
+	res, err := tx.Exec(
+		"INSERT INTO `clarifications` (`team_id`, `question`, `created_at`, `updated_at`) VALUES (?, ?, ?, ?)",
 		team.ID,
 		req.Question,
+		time,
+		time,
 	)
 	if err != nil {
 		return fmt.Errorf("insert clarification: %w", err)
 	}
-	var clarification xsuportal.Clarification
-	// TODO: res.LastInsertId()つかえそう、てか生成できそうな気がする
-	err = tx.Get(&clarification, "SELECT * FROM `clarifications` WHERE `id` = LAST_INSERT_ID() LIMIT 1")
+
+	clarificationID, err := res.LastInsertId()
 	if err != nil {
-		return fmt.Errorf("get clarification: %w", err)
+		return fmt.Errorf("get LastInsertId: %w", err)
 	}
+
+	clarification := xsuportal.Clarification{
+		ID:         clarificationID,
+		TeamID:     team.ID,
+		Disclosed:  sql.NullBool{},
+		Question:   sql.NullString{
+			req.Question,
+			true,
+		},
+		Answer:     sql.NullString{},
+		AnsweredAt: sql.NullTime{},
+		CreatedAt:  time,
+		UpdatedAt:  time,
+	}
+
+	unanswerdClarification.Store(clarificationID, clarification)
+
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit tx: %w", err)
 	}
