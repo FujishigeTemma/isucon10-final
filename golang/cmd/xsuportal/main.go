@@ -28,7 +28,6 @@ import (
 
 	xsuportal "github.com/isucon/isucon10-final/webapp/golang"
 	xsuportalpb "github.com/isucon/isucon10-final/webapp/golang/proto/xsuportal"
-	"github.com/isucon/isucon10-final/webapp/golang/proto/xsuportal/resources"
 	resourcespb "github.com/isucon/isucon10-final/webapp/golang/proto/xsuportal/resources"
 	adminpb "github.com/isucon/isucon10-final/webapp/golang/proto/xsuportal/services/admin"
 	audiencepb "github.com/isucon/isucon10-final/webapp/golang/proto/xsuportal/services/audience"
@@ -694,10 +693,10 @@ func (*ContestantService) ListNotifications(e echo.Context) error {
 	if ok, err := loginRequiredByContestant(e, contestant, &loginRequiredOption{Team: true}); !ok {
 		return wrapError("check session", err)
 	}
-	return writeProto(e, http.StatusOK, &contestantpb.ListNotificationsResponse{
-		Notifications:               []*resources.Notification{},
-		LastAnsweredClarificationId: 0,
-	})
+	// return writeProto(e, http.StatusOK, &contestantpb.ListNotificationsResponse{
+	// 	Notifications:               []*resources.Notification{},
+	// 	LastAnsweredClarificationId: 0,
+	// })
 
 	afterStr := e.QueryParam("after")
 
