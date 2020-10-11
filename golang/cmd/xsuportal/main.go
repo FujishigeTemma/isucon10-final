@@ -643,10 +643,10 @@ func (*ContestantService) ListNotifications(e echo.Context) error {
 	if ok, err := loginRequiredByContestant(e, contestant, &loginRequiredOption{Team: true}); !ok {
 		return wrapError("check session", err)
 	}
-	// return writeProto(e, http.StatusOK, &contestantpb.ListNotificationsResponse{
-	// 	Notifications:               nil,
-	// 	LastAnsweredClarificationId: 0,
-	// })
+	return writeProto(e, http.StatusOK, &contestantpb.ListNotificationsResponse{
+		Notifications:               nil,
+		LastAnsweredClarificationId: 0,
+	})
 
 	afterStr := e.QueryParam("after")
 
