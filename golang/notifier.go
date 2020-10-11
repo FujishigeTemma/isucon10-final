@@ -24,38 +24,41 @@ const (
 
 type Notifier struct {
 	mu      sync.Mutex
-	Options *webpush.Options
+	options *webpush.Options
 }
 
-func NewNotifier() *Notifier {
-	notifier := new(Notifier)
-	pemBytes, err := ioutil.ReadFile(WebpushVAPIDPrivateKeyPath)
-	if err != nil {
-		fmt.Println("read file error")
-		fmt.Println(err)
-		return nil
+func (n *Notifier) VAPIDKey() *webpush.Options {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if n.options == nil {
+		pemBytes, err := ioutil.ReadFile(WebpushVAPIDPrivateKeyPath)
+		if err != nil {
+			fmt.Println("read file error")
+			fmt.Println(err)
+			return nil
+		}
+		block, _ := pem.Decode(pemBytes)
+		if block == nil {
+			return nil
+		}
+		priKey, err := x509.ParseECPrivateKey(block.Bytes)
+		if err != nil {
+			return nil
+		}
+		priBytes := priKey.D.Bytes()
+		pubBytes := elliptic.Marshal(priKey.Curve, priKey.X, priKey.Y)
+		pri := base64.RawURLEncoding.EncodeToString(priBytes)
+		pub := base64.RawURLEncoding.EncodeToString(pubBytes)
+		n.options = &webpush.Options{
+			Subscriber:      WebpushSubject,
+			VAPIDPrivateKey: pri,
+			VAPIDPublicKey:  pub,
+		}
 	}
-	block, _ := pem.Decode(pemBytes)
-	if block == nil {
-		return nil
-	}
-	priKey, err := x509.ParseECPrivateKey(block.Bytes)
-	if err != nil {
-		return nil
-	}
-	priBytes := priKey.D.Bytes()
-	pubBytes := elliptic.Marshal(priKey.Curve, priKey.X, priKey.Y)
-	pri := base64.RawURLEncoding.EncodeToString(priBytes)
-	pub := base64.RawURLEncoding.EncodeToString(pubBytes)
-	notifier.Options = &webpush.Options{
-		Subscriber:      WebpushSubject,
-		VAPIDPrivateKey: pri,
-		VAPIDPublicKey:  pub,
-	}
-	return notifier
+	return n.options
 }
 
-func (n *Notifier) sendWebPush(notificationPB *resources.Notification, pushSubscription *PushSubscription) error {
+func SendWebPush(vapidPrivateKey, vapidPublicKey string, notificationPB *resources.Notification, pushSubscription *PushSubscription) error {
 	b, err := proto.Marshal(notificationPB)
 	if err != nil {
 		return fmt.Errorf("marshal notification: %w", err)
@@ -72,7 +75,11 @@ func (n *Notifier) sendWebPush(notificationPB *resources.Notification, pushSubsc
 				P256dh: pushSubscription.P256DH,
 			},
 		},
-		n.Options,
+		&webpush.Options{
+			Subscriber:      WebpushSubject,
+			VAPIDPublicKey:  vapidPublicKey,
+			VAPIDPrivateKey: vapidPrivateKey,
+		},
 	)
 	if err != nil {
 		fmt.Println(err)
@@ -165,7 +172,7 @@ func (n *Notifier) NotifyClarificationAnswered(db sqlx.Ext, c *Clarification, up
 		if err != nil {
 			return fmt.Errorf("notify: %w", err)
 		}
-		if n.Options != nil {
+		if n.options != nil {
 			notificationPB.Id = notification.ID
 			notificationPB.CreatedAt = timestamppb.New(notification.CreatedAt)
 			info, exist := infoMap[contestant.ID]
@@ -173,7 +180,7 @@ func (n *Notifier) NotifyClarificationAnswered(db sqlx.Ext, c *Clarification, up
 				fmt.Println("exist not subscribe user")
 				return fmt.Errorf("not subscribe")
 			}
-			n.sendWebPush(notificationPB, &info)
+			SendWebPush(n.options.VAPIDPrivateKey, n.options.VAPIDPublicKey, notificationPB, &info)
 		}
 	}
 	return nil
@@ -219,7 +226,7 @@ func (n *Notifier) NotifyBenchmarkJobFinished(db sqlx.Ext, job *BenchmarkJob) er
 			fmt.Println(err)
 			return fmt.Errorf("notify: %w", err)
 		}
-		if n.Options != nil {
+		if n.options != nil {
 			notificationPB.Id = notification.ID
 			notificationPB.CreatedAt = timestamppb.New(notification.CreatedAt)
 			info, exist := infoMap[contestant.ID]
@@ -227,7 +234,7 @@ func (n *Notifier) NotifyBenchmarkJobFinished(db sqlx.Ext, job *BenchmarkJob) er
 				fmt.Println("exist not subscribe user")
 				return fmt.Errorf("not subscribe")
 			}
-			n.sendWebPush(notificationPB, &info)
+			SendWebPush(n.options.VAPIDPrivateKey, n.options.VAPIDPublicKey, notificationPB, &info)
 		}
 	}
 	return nil
