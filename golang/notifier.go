@@ -189,7 +189,6 @@ func (n *Notifier) NotifyClarificationAnswered(db sqlx.Ext, c *Clarification, up
 			if err != nil {
 				fmt.Printf("is to team: %#v\n", !c.Disclosed.Valid || !c.Disclosed.Bool)
 				fmt.Printf("err in sendwebpush: %v\n", err)
-				return err
 			}
 		}
 	}
@@ -244,7 +243,10 @@ func (n *Notifier) NotifyBenchmarkJobFinished(db sqlx.Ext, job *BenchmarkJob) er
 				fmt.Println("exist not subscribe user")
 				return fmt.Errorf("not subscribe")
 			}
-			SendWebPush(n.options.VAPIDPrivateKey, n.options.VAPIDPublicKey, notificationPB, &info)
+			err = SendWebPush(n.options.VAPIDPrivateKey, n.options.VAPIDPublicKey, notificationPB, &info)
+			if err != nil {
+				fmt.Printf("err in sendwebpush: %v\n", err)
+			}
 		}
 	}
 	return nil
