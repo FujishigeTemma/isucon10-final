@@ -75,15 +75,18 @@ func (n *Notifier) sendWebPush(notificationPB *resources.Notification, pushSubsc
 		n.Options,
 	)
 	if err != nil {
+		fmt.Println(err)
 		return fmt.Errorf("send notification: %w", err)
 	}
 	defer resp.Body.Close()
 	expired := resp.StatusCode == 410
 	if expired {
+		fmt.Println(err)
 		return fmt.Errorf("expired notification")
 	}
 	invalid := resp.StatusCode == 404
 	if invalid {
+		fmt.Println(err)
 		return fmt.Errorf("invalid notification")
 	}
 	return nil
@@ -134,6 +137,7 @@ func (n *Notifier) NotifyClarificationAnswered(db sqlx.Ext, c *Clarification, up
 			c.TeamID,
 		)
 		if err != nil {
+			fmt.Printf("select contestants(team_id=%v): %#v\n", c.TeamID, err) 
 			return fmt.Errorf("select contestants(team_id=%v): %w", c.TeamID, err)
 		}
 	}
@@ -143,9 +147,7 @@ func (n *Notifier) NotifyClarificationAnswered(db sqlx.Ext, c *Clarification, up
 		ids = append(ids, c.ID)
 	}
 	// TODO: JOINでとれる
-	fmt.Printf("ids: %#v\n", ids)
 	infoMap, err := getTargetsMapFromIDs(db, ids)
-	fmt.Printf("ids: %#v\n", infoMap)
 	if err != nil {
 		return err
 	}
@@ -189,6 +191,7 @@ func (n *Notifier) NotifyBenchmarkJobFinished(db sqlx.Ext, job *BenchmarkJob) er
 		job.TeamID,
 	)
 	if err != nil {
+		fmt.Printf("select contestants(team_id=%v): %#v\n", job.TeamID, err)
 		return fmt.Errorf("select contestants(team_id=%v): %w", job.TeamID, err)
 	}
 	ids := []string{}
@@ -198,6 +201,8 @@ func (n *Notifier) NotifyBenchmarkJobFinished(db sqlx.Ext, job *BenchmarkJob) er
 	// TODO: JOINでとれる
 	infoMap, err := getTargetsMapFromIDs(db, ids)
 	if err != nil {
+		fmt.Println("error in getTargetsMapFromIDs")
+		fmt.Println(err)
 		return err
 	}
 	for _, contestant := range contestants {
@@ -210,6 +215,7 @@ func (n *Notifier) NotifyBenchmarkJobFinished(db sqlx.Ext, job *BenchmarkJob) er
 		}
 		notification, err := n.notify(db, notificationPB, contestant.ID)
 		if err != nil {
+			fmt.Println(err)
 			return fmt.Errorf("notify: %w", err)
 		}
 		if n.Options != nil {
