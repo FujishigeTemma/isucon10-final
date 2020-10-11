@@ -222,6 +222,8 @@ func (n *Notifier) NotifyBenchmarkJobFinished(db sqlx.Ext, job *BenchmarkJob) er
 		fmt.Println(err)
 		return err
 	}
+	fmt.Printf("ids: %#v\n", ids)
+	fmt.Printf("map: %#v\n", infoMap)
 	for _, contestant := range contestants {
 		notificationPB := &resources.Notification{
 			Content: &resources.Notification_ContentBenchmarkJob{
