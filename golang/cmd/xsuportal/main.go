@@ -668,8 +668,9 @@ func (*ContestantService) ListNotifications(e echo.Context) error {
 	if err != sql.ErrNoRows && err != nil {
 		return fmt.Errorf("get last answered clarification: %w", err)
 	}
+	ns, err := makeNotificationsPB([]*xsuportal.Notification{})
 	return writeProto(e, http.StatusOK, &contestantpb.ListNotificationsResponse{
-		Notifications:               []*resources.Notification{},
+		Notifications:             		ns,
 		LastAnsweredClarificationId: lastAnsweredClarificationID,
 	})
 }
