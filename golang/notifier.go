@@ -99,7 +99,7 @@ func SendWebPush(vapidPrivateKey, vapidPublicKey string, notificationPB *resourc
 	return nil
 }
 
-func getTargetsMapFromIDs(db sqlx.Ext, ids []string) (map[string]PushSubscription, error) {
+func getTargetsMapFromIDs(db sqlx.Ext, ids []string) ([]PushSubscription, error) {
 	inQuery, inArgs, err := sqlx.In("SELECT * FROM `push_subscriptions` WHERE `contestant_id` IN (?)", ids)
 	if err != nil {
 		fmt.Println("error in constructing query in getTargetsFromIDs")
@@ -115,9 +115,9 @@ func getTargetsMapFromIDs(db sqlx.Ext, ids []string) (map[string]PushSubscriptio
 	if err != nil {
 		return nil, fmt.Errorf("select all contestants: %w", err)
 	}
-	res := map[string]PushSubscription{}
+	res := []PushSubscription{}
 	for _, t := range targetInfos {
-		res[t.ContestantID] = t
+		res = append(res, t)
 	}
 	return res, nil
 }
@@ -154,14 +154,14 @@ func (n *Notifier) NotifyClarificationAnswered(db sqlx.Ext, c *Clarification, up
 		ids = append(ids, c.ID)
 	}
 	// TODO: JOINでとれる
-	infoMap, err := getTargetsMapFromIDs(db, ids)
+	infos, err := getTargetsMapFromIDs(db, ids)
 	if err != nil {
 		return err
 	}
 	if !c.Disclosed.Valid || !c.Disclosed.Bool {
 		fmt.Println("this request has targeted team")
 		fmt.Printf("ids: %#v\n", ids)
-		fmt.Printf("map: %#v\n", infoMap)
+		fmt.Printf("map: %#v\n", infos)
 	}
 	for _, contestant := range contestants {
 		notificationPB := &resources.Notification{
@@ -180,15 +180,12 @@ func (n *Notifier) NotifyClarificationAnswered(db sqlx.Ext, c *Clarification, up
 		if n.options != nil {
 			notificationPB.Id = notification.ID
 			notificationPB.CreatedAt = timestamppb.New(notification.CreatedAt)
-			info, exist := infoMap[contestant.ID]
-			if !exist {
-				fmt.Println("exist not subscribe user")
-				return fmt.Errorf("not subscribe")
-			}
-			err = SendWebPush(n.options.VAPIDPrivateKey, n.options.VAPIDPublicKey, notificationPB, &info)
-			if err != nil {
-				fmt.Printf("is to team: %#v\n", !c.Disclosed.Valid || !c.Disclosed.Bool)
-				fmt.Printf("err in sendwebpush: %v\n", err)
+			for _, info := range infos {
+				err = SendWebPush(n.options.VAPIDPrivateKey, n.options.VAPIDPublicKey, notificationPB, &info)
+				if err != nil {
+					fmt.Printf("is to team: %#v\n", !c.Disclosed.Valid || !c.Disclosed.Bool)
+					fmt.Printf("err in sendwebpush: %v\n", err)
+				}
 			}
 		}
 	}
@@ -216,14 +213,14 @@ func (n *Notifier) NotifyBenchmarkJobFinished(db sqlx.Ext, job *BenchmarkJob) er
 		ids = append(ids, c.ID)
 	}
 	// TODO: JOINでとれる
-	infoMap, err := getTargetsMapFromIDs(db, ids)
+	infos, err := getTargetsMapFromIDs(db, ids)
 	if err != nil {
 		fmt.Println("error in getTargetsMapFromIDs")
 		fmt.Println(err)
 		return err
 	}
 	fmt.Printf("ids: %#v\n", ids)
-	fmt.Printf("map: %#v\n", infoMap)
+	fmt.Printf("map: %#v\n", infos)
 	for _, contestant := range contestants {
 		notificationPB := &resources.Notification{
 			Content: &resources.Notification_ContentBenchmarkJob{
@@ -240,14 +237,11 @@ func (n *Notifier) NotifyBenchmarkJobFinished(db sqlx.Ext, job *BenchmarkJob) er
 		if n.options != nil {
 			notificationPB.Id = notification.ID
 			notificationPB.CreatedAt = timestamppb.New(notification.CreatedAt)
-			info, exist := infoMap[contestant.ID]
-			if !exist {
-				fmt.Println("exist not subscribe user")
-				return fmt.Errorf("not subscribe")
-			}
-			err = SendWebPush(n.options.VAPIDPrivateKey, n.options.VAPIDPublicKey, notificationPB, &info)
-			if err != nil {
-				fmt.Printf("err in sendwebpush: %v\n", err)
+			for _, info := range infos {
+				err = SendWebPush(n.options.VAPIDPrivateKey, n.options.VAPIDPublicKey, notificationPB, &info)
+				if err != nil {
+					fmt.Printf("err in sendwebpush: %v\n", err)
+				}
 			}
 		}
 	}
