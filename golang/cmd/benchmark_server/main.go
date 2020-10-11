@@ -126,6 +126,7 @@ func (b *benchmarkReportService) Svc() *bench.BenchmarkReportService {
 }
 
 func (b *benchmarkReportService) ReportBenchmarkResult(srv bench.BenchmarkReport_ReportBenchmarkResultServer) error {
+	var notifier xsuportal.Notifier
 	for {
 		req, err := srv.Recv()
 		if err != nil {
@@ -164,7 +165,7 @@ func (b *benchmarkReportService) ReportBenchmarkResult(srv bench.BenchmarkReport
 				if err := tx.Commit(); err != nil {
 					return fmt.Errorf("commit tx: %w", err)
 				}
-				if err := xsuportal.NotifyBenchmarkJobFinished(db, &job); err != nil {
+				if err := notifier.NotifyBenchmarkJobFinished(db, &job); err != nil {
 					return fmt.Errorf("notify benchmark job finished: %w", err)
 				}
 			} else {

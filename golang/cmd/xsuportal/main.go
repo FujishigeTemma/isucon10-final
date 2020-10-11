@@ -52,7 +52,7 @@ const (
 )
 
 var db *sqlx.DB
-// var notifier xsuportal.Notifier
+var notifier xsuportal.Notifier
 var cacheStore = cache.New(900*time.Millisecond, 5*time.Minute)
 var dashboardGroup singleflight.Group
 
@@ -63,7 +63,7 @@ func main() {
 
 	srv.Binder = ProtoBinder{}
 
-	// notifier = xsuportal.Notifier{}
+	notifier = xsuportal.Notifier{}
 
 	db, _ = xsuportal.GetDB()
 
@@ -390,7 +390,7 @@ func (*AdminService) RespondClarification(e echo.Context) error {
 		return fmt.Errorf("commit tx: %w", err)
 	}
 	updated := wasAnswered && wasDisclosed == clarification.Disclosed
-	if err := xsuportal.NotifyClarificationAnswered(db, &clarification, updated); err != nil {
+	if err := notifier.NotifyClarificationAnswered(db, &clarification, updated); err != nil {
 		return fmt.Errorf("notify clarification answered: %w", err)
 	}
 	return writeProto(e, http.StatusOK, &adminpb.RespondClarificationResponse{
@@ -424,7 +424,7 @@ func (*CommonService) GetCurrentSession(e echo.Context) error {
 	if err != nil {
 		return fmt.Errorf("make contest: %w", err)
 	}
-	vapidKey := xsuportal.VAPIDKey()
+	vapidKey := notifier.VAPIDKey()
 	if vapidKey != nil {
 		res.PushVapidKey = vapidKey.VAPIDPublicKey
 	}
@@ -680,7 +680,7 @@ func (*ContestantService) SubscribeNotification(e echo.Context) error {
 		return wrapError("check session", err)
 	}
 
-	if xsuportal.VAPIDKey() == nil {
+	if notifier.VAPIDKey() == nil {
 		return halt(e, http.StatusServiceUnavailable, "WebPush は未対応です", nil)
 	}
 
@@ -711,7 +711,7 @@ func (*ContestantService) UnsubscribeNotification(e echo.Context) error {
 		return wrapError("check session", err)
 	}
 
-	if xsuportal.VAPIDKey() == nil {
+	if notifier.VAPIDKey() == nil {
 		return halt(e, http.StatusServiceUnavailable, "WebPush は未対応です", nil)
 	}
 

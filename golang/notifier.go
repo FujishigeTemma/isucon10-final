@@ -3,13 +3,11 @@ package xsuportal
 import (
 	"crypto/elliptic"
 	"crypto/x509"
-	"database/sql"
 	"encoding/base64"
 	"encoding/pem"
 	"fmt"
 	"io/ioutil"
-	"io"
-	"log"
+	"sync"
 
 	"github.com/SherClockHolmes/webpush-go"
 	"github.com/golang/protobuf/proto"
@@ -24,37 +22,107 @@ const (
 	WebpushSubject             = "xsuportal@example.com"
 )
 
-var webpushOptions *webpush.Options
-
-func PreLoadVAPIDKey() {
-	pemBytes, err := ioutil.ReadFile(WebpushVAPIDPrivateKeyPath)
-	if err != nil {
-		return
-	}
-	block, _ := pem.Decode(pemBytes)
-	if block == nil {
-		return
-	}
-	priKey, err := x509.ParseECPrivateKey(block.Bytes)
-	if err != nil {
-		return
-	}
-	priBytes := priKey.D.Bytes()
-	pubBytes := elliptic.Marshal(priKey.Curve, priKey.X, priKey.Y)
-	pri := base64.RawURLEncoding.EncodeToString(priBytes)
-	pub := base64.RawURLEncoding.EncodeToString(pubBytes)
-	webpushOptions = &webpush.Options{
-		Subscriber:      WebpushSubject,
-		VAPIDPrivateKey: pri,
-		VAPIDPublicKey:  pub,
-	}
+type Notifier struct {
+	mu      sync.Mutex
+	options *webpush.Options
 }
 
-func VAPIDKey() *webpush.Options {
-	return webpushOptions
+func (n *Notifier) VAPIDKey() *webpush.Options {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if n.options == nil {
+		pemBytes, err := ioutil.ReadFile(WebpushVAPIDPrivateKeyPath)
+		if err != nil {
+			fmt.Println("read file error")
+			fmt.Println(err)
+			return nil
+		}
+		block, _ := pem.Decode(pemBytes)
+		if block == nil {
+			return nil
+		}
+		priKey, err := x509.ParseECPrivateKey(block.Bytes)
+		if err != nil {
+			return nil
+		}
+		priBytes := priKey.D.Bytes()
+		pubBytes := elliptic.Marshal(priKey.Curve, priKey.X, priKey.Y)
+		pri := base64.RawURLEncoding.EncodeToString(priBytes)
+		pub := base64.RawURLEncoding.EncodeToString(pubBytes)
+		n.options = &webpush.Options{
+			Subscriber:      WebpushSubject,
+			VAPIDPrivateKey: pri,
+			VAPIDPublicKey:  pub,
+		}
+	}
+	return n.options
 }
 
-func NotifyClarificationAnswered(db sqlx.Ext, c *Clarification, updated bool) error {
+func SendWebPush(vapidPrivateKey, vapidPublicKey string, notificationPB *resources.Notification, pushSubscription *PushSubscription) error {
+	b, err := proto.Marshal(notificationPB)
+	if err != nil {
+		return fmt.Errorf("marshal notification: %w", err)
+	}
+	message := make([]byte, base64.StdEncoding.EncodedLen(len(b)))
+	base64.StdEncoding.Encode(message, b)
+
+	resp, err := webpush.SendNotification(
+		message,
+		&webpush.Subscription{
+			Endpoint: pushSubscription.Endpoint,
+			Keys: webpush.Keys{
+				Auth:   pushSubscription.Auth,
+				P256dh: pushSubscription.P256DH,
+			},
+		},
+		&webpush.Options{
+			Subscriber:      WebpushSubject,
+			VAPIDPublicKey:  vapidPublicKey,
+			VAPIDPrivateKey: vapidPrivateKey,
+		},
+	)
+	if err != nil {
+		fmt.Println(err)
+		return fmt.Errorf("send notification: %w", err)
+	}
+	defer resp.Body.Close()
+	expired := resp.StatusCode == 410
+	if expired {
+		fmt.Println(err)
+		return fmt.Errorf("expired notification")
+	}
+	invalid := resp.StatusCode == 404
+	if invalid {
+		fmt.Println(err)
+		return fmt.Errorf("invalid notification")
+	}
+	return nil
+}
+
+func getTargetsMapFromIDs(db sqlx.Ext, ids []string) (map[string]PushSubscription, error) {
+	inQuery, inArgs, err := sqlx.In("SELECT * FROM `push_subscriptions` WHERE `contestant_id` IN (?)", ids)
+	if err != nil {
+		fmt.Println("error in constructing query in getTargetsFromIDs")
+		fmt.Printf("%#v", err)
+		return nil, err
+	}
+	targetInfos := []PushSubscription{}
+	err = sqlx.Select(
+		db,
+		&targetInfos,
+		inQuery, inArgs...,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("select all contestants: %w", err)
+	}
+	res := map[string]PushSubscription{}
+	for _, t := range targetInfos {
+		res[t.ContestantID] = t
+	}
+	return res, nil
+}
+
+func (n *Notifier) NotifyClarificationAnswered(db sqlx.Ext, c *Clarification, updated bool) error {
 	var contestants []struct {
 		ID     string `db:"id"`
 		TeamID int64  `db:"team_id"`
@@ -76,8 +144,24 @@ func NotifyClarificationAnswered(db sqlx.Ext, c *Clarification, updated bool) er
 			c.TeamID,
 		)
 		if err != nil {
+			fmt.Printf("select contestants(team_id=%v): %#v\n", c.TeamID, err) 
 			return fmt.Errorf("select contestants(team_id=%v): %w", c.TeamID, err)
 		}
+	}
+
+	ids := []string{}
+	for _, c := range contestants {
+		ids = append(ids, c.ID)
+	}
+	// TODO: JOINでとれる
+	infoMap, err := getTargetsMapFromIDs(db, ids)
+	if err != nil {
+		return err
+	}
+	if !c.Disclosed.Valid || !c.Disclosed.Bool {
+		fmt.Println("this request has targeted team")
+		fmt.Printf("ids: %#v\n", ids)
+		fmt.Printf("map: %#v\n", infoMap)
 	}
 	for _, contestant := range contestants {
 		notificationPB := &resources.Notification{
@@ -89,21 +173,31 @@ func NotifyClarificationAnswered(db sqlx.Ext, c *Clarification, updated bool) er
 				},
 			},
 		}
-		notification, err := notify(db, notificationPB, contestant.ID)
+		notification, err := n.notify(db, notificationPB, contestant.ID)
 		if err != nil {
 			return fmt.Errorf("notify: %w", err)
 		}
-		if VAPIDKey() != nil {
+		if n.options != nil {
 			notificationPB.Id = notification.ID
 			notificationPB.CreatedAt = timestamppb.New(notification.CreatedAt)
-
-			sendNotificationByWebPush(db, contestant.ID, notificationPB)
+			info, exist := infoMap[contestant.ID]
+			if !exist {
+				fmt.Println("exist not subscribe user")
+				return fmt.Errorf("not subscribe")
+			}
+			err = SendWebPush(n.options.VAPIDPrivateKey, n.options.VAPIDPublicKey, notificationPB, &info)
+			if err != nil {
+				fmt.Printf("is to team: %#v\n", !c.Disclosed.Valid || !c.Disclosed.Bool)
+				fmt.Printf("err in sendwebpush: %v\n", err)
+				return err
+			}
 		}
 	}
 	return nil
 }
 
-func NotifyBenchmarkJobFinished(db sqlx.Ext, job *BenchmarkJob) error {
+func (n *Notifier) NotifyBenchmarkJobFinished(db sqlx.Ext, job *BenchmarkJob) error {
+	fmt.Println("start webpush (bench)")
 	var contestants []struct {
 		ID     string `db:"id"`
 		TeamID int64  `db:"team_id"`
@@ -115,7 +209,19 @@ func NotifyBenchmarkJobFinished(db sqlx.Ext, job *BenchmarkJob) error {
 		job.TeamID,
 	)
 	if err != nil {
+		fmt.Printf("select contestants(team_id=%v): %#v\n", job.TeamID, err)
 		return fmt.Errorf("select contestants(team_id=%v): %w", job.TeamID, err)
+	}
+	ids := []string{}
+	for _, c := range contestants {
+		ids = append(ids, c.ID)
+	}
+	// TODO: JOINでとれる
+	infoMap, err := getTargetsMapFromIDs(db, ids)
+	if err != nil {
+		fmt.Println("error in getTargetsMapFromIDs")
+		fmt.Println(err)
+		return err
 	}
 	for _, contestant := range contestants {
 		notificationPB := &resources.Notification{
@@ -125,21 +231,26 @@ func NotifyBenchmarkJobFinished(db sqlx.Ext, job *BenchmarkJob) error {
 				},
 			},
 		}
-		notification, err := notify(db, notificationPB, contestant.ID)
+		notification, err := n.notify(db, notificationPB, contestant.ID)
 		if err != nil {
+			fmt.Println(err)
 			return fmt.Errorf("notify: %w", err)
 		}
-		if VAPIDKey() != nil {
+		if n.options != nil {
 			notificationPB.Id = notification.ID
 			notificationPB.CreatedAt = timestamppb.New(notification.CreatedAt)
-
-			sendNotificationByWebPush(db, contestant.ID, notificationPB)
+			info, exist := infoMap[contestant.ID]
+			if !exist {
+				fmt.Println("exist not subscribe user")
+				return fmt.Errorf("not subscribe")
+			}
+			SendWebPush(n.options.VAPIDPrivateKey, n.options.VAPIDPublicKey, notificationPB, &info)
 		}
 	}
 	return nil
 }
 
-func notify(db sqlx.Ext, notificationPB *resources.Notification, contestantID string) (*Notification, error) {
+func (n *Notifier) notify(db sqlx.Ext, notificationPB *resources.Notification, contestantID string) (*Notification, error) {
 	m, err := proto.Marshal(notificationPB)
 	if err != nil {
 		return nil, fmt.Errorf("marshal notification: %w", err)
@@ -154,6 +265,7 @@ func notify(db sqlx.Ext, notificationPB *resources.Notification, contestantID st
 		return nil, fmt.Errorf("insert notification: %w", err)
 	}
 	lastInsertID, _ := res.LastInsertId()
+	// notification := Notification{}
 	var notification Notification
 	err = sqlx.Get(
 		db,
@@ -165,55 +277,4 @@ func notify(db sqlx.Ext, notificationPB *resources.Notification, contestantID st
 		return nil, fmt.Errorf("get inserted notification: %w", err)
 	}
 	return &notification, nil
-}
-
-func sendNotificationByWebPush(db sqlx.Ext, contestantId string, notificationPB *resources.Notification) error {
-	var pushSubscription PushSubscription
-	err := sqlx.Get(
-		db,
-		&pushSubscription,
-		"SELECT * FROM `push_subscriptions` WHERE `contestant_id` = ? LIMIT 1",
-		contestantId,
-	)
-	if err != nil {
-		return fmt.Errorf("select push subscriptions: %w", err)
-	}
-	if err == sql.ErrNoRows {
-		return nil
-	}
-
-	b, err := proto.Marshal(notificationPB)
-	if err != nil {
-		return fmt.Errorf("marshal payload: %w", err)
-	}
-	message := make([]byte, base64.StdEncoding.EncodedLen(len(b)))
-	base64.StdEncoding.Encode(message, b)
-
-	options := VAPIDKey()
-
-	// Send Notification
-	for i := 0; i < 2; i++ {
-		resp, err := webpush.SendNotification(message,
-			&webpush.Subscription{
-				Endpoint: pushSubscription.Endpoint,
-				Keys: webpush.Keys{
-					Auth:   pushSubscription.Auth,
-					P256dh: pushSubscription.P256DH,
-				},
-			},
-			&webpush.Options{
-				Subscriber:      options.Subscriber,
-				VAPIDPublicKey:  options.VAPIDPublicKey,
-				VAPIDPrivateKey: options.VAPIDPrivateKey,
-				TTL:             30,
-			})
-		if err != nil {
-			log.Printf("webpush SendNotification: %w", err)
-			continue
-			//	return fmt.Errorf("webpush SendNotification: %w", err)
-		}
-		io.Copy(ioutil.Discard, resp.Body)
-		resp.Body.Close()
-	}
-	return nil
 }
