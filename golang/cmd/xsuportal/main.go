@@ -27,7 +27,6 @@ import (
 
 	xsuportal "github.com/isucon/isucon10-final/webapp/golang"
 	xsuportalpb "github.com/isucon/isucon10-final/webapp/golang/proto/xsuportal"
-	"github.com/isucon/isucon10-final/webapp/golang/proto/xsuportal/resources"
 	resourcespb "github.com/isucon/isucon10-final/webapp/golang/proto/xsuportal/resources"
 	adminpb "github.com/isucon/isucon10-final/webapp/golang/proto/xsuportal/services/admin"
 	audiencepb "github.com/isucon/isucon10-final/webapp/golang/proto/xsuportal/services/audience"
@@ -52,7 +51,7 @@ const (
 )
 
 var db *sqlx.DB
-var notifier xsuportal.Notifier
+// var notifier xsuportal.Notifier
 var cacheStore = cache.New(900*time.Millisecond, 5*time.Minute)
 var dashboardGroup singleflight.Group
 
@@ -63,7 +62,7 @@ func main() {
 
 	srv.Binder = ProtoBinder{}
 
-	notifier = xsuportal.Notifier{}
+	// notifier = xsuportal.Notifier{}
 
 	db, _ = xsuportal.GetDB()
 
@@ -390,7 +389,7 @@ func (*AdminService) RespondClarification(e echo.Context) error {
 		return fmt.Errorf("commit tx: %w", err)
 	}
 	updated := wasAnswered && wasDisclosed == clarification.Disclosed
-	if err := notifier.NotifyClarificationAnswered(db, &clarification, updated); err != nil {
+	if err := xsuportal.NotifyClarificationAnswered(db, &clarification, updated); err != nil {
 		return fmt.Errorf("notify clarification answered: %w", err)
 	}
 	return writeProto(e, http.StatusOK, &adminpb.RespondClarificationResponse{
@@ -424,7 +423,7 @@ func (*CommonService) GetCurrentSession(e echo.Context) error {
 	if err != nil {
 		return fmt.Errorf("make contest: %w", err)
 	}
-	vapidKey := notifier.VAPIDKey()
+	vapidKey := xsuportal.VAPIDKey()
 	if vapidKey != nil {
 		res.PushVapidKey = vapidKey.VAPIDPublicKey
 	}
@@ -644,10 +643,10 @@ func (*ContestantService) ListNotifications(e echo.Context) error {
 	if ok, err := loginRequiredByContestant(e, contestant, &loginRequiredOption{Team: true}); !ok {
 		return wrapError("check session", err)
 	}
-	return writeProto(e, http.StatusOK, &contestantpb.ListNotificationsResponse{
-		Notifications:               []*resources.Notification{},
-		LastAnsweredClarificationId: 0,
-	})
+	// return writeProto(e, http.StatusOK, &contestantpb.ListNotificationsResponse{
+	// 	Notifications:               []*resources.Notification{},
+	// 	LastAnsweredClarificationId: 0,
+	// })
 
 	afterStr := e.QueryParam("after")
 
@@ -719,7 +718,7 @@ func (*ContestantService) SubscribeNotification(e echo.Context) error {
 		return wrapError("check session", err)
 	}
 
-	if notifier.VAPIDKey() == nil {
+	if xsuportal.VAPIDKey() == nil {
 		return halt(e, http.StatusServiceUnavailable, "WebPush は未対応です", nil)
 	}
 
@@ -750,7 +749,7 @@ func (*ContestantService) UnsubscribeNotification(e echo.Context) error {
 		return wrapError("check session", err)
 	}
 
-	if notifier.VAPIDKey() == nil {
+	if xsuportal.VAPIDKey() == nil {
 		return halt(e, http.StatusServiceUnavailable, "WebPush は未対応です", nil)
 	}
 
