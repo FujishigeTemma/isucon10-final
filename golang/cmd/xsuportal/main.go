@@ -51,7 +51,7 @@ const (
 )
 
 var db *sqlx.DB
-var notifier xsuportal.Notifier
+var notifier = xsuportal.NewNotifier()
 var cacheStore = cache.New(900*time.Millisecond, 5*time.Minute)
 var dashboardGroup singleflight.Group
 
@@ -61,8 +61,6 @@ func main() {
 	srv.HideBanner = true
 
 	srv.Binder = ProtoBinder{}
-
-	notifier = xsuportal.Notifier{}
 
 	db, _ = xsuportal.GetDB()
 
@@ -205,7 +203,7 @@ func (*AdminService) Initialize(e echo.Context) error {
 }
 
 func getTeams(teamIDs []int64) (map[int64]xsuportal.Team, error) {
-	sql, params, err  := sqlx.In(
+	sql, params, err := sqlx.In(
 		"SELECT * FROM `teams` WHERE `id` IN (?)",
 		teamIDs,
 	)
@@ -423,9 +421,8 @@ func (*CommonService) GetCurrentSession(e echo.Context) error {
 	if err != nil {
 		return fmt.Errorf("make contest: %w", err)
 	}
-	vapidKey := notifier.VAPIDKey()
-	if vapidKey != nil {
-		res.PushVapidKey = vapidKey.VAPIDPublicKey
+	if notifier.Options != nil {
+		res.PushVapidKey = notifier.Options.VAPIDPublicKey
 	}
 	return writeProto(e, http.StatusOK, res)
 }
@@ -718,7 +715,7 @@ func (*ContestantService) SubscribeNotification(e echo.Context) error {
 		return wrapError("check session", err)
 	}
 
-	if notifier.VAPIDKey() == nil {
+	if notifier.Options == nil {
 		return halt(e, http.StatusServiceUnavailable, "WebPush は未対応です", nil)
 	}
 
@@ -749,7 +746,7 @@ func (*ContestantService) UnsubscribeNotification(e echo.Context) error {
 		return wrapError("check session", err)
 	}
 
-	if notifier.VAPIDKey() == nil {
+	if notifier.Options == nil {
 		return halt(e, http.StatusServiceUnavailable, "WebPush は未対応です", nil)
 	}
 
