@@ -181,6 +181,9 @@ func (n *Notifier) NotifyClarificationAnswered(db sqlx.Ext, c *Clarification, up
 			notificationPB.Id = notification.ID
 			notificationPB.CreatedAt = timestamppb.New(notification.CreatedAt)
 			for _, info := range infos {
+				if info.ContestantID != contestant.ID {
+					continue
+				}
 				err = SendWebPush(n.options.VAPIDPrivateKey, n.options.VAPIDPublicKey, notificationPB, &info)
 				if err != nil {
 					fmt.Printf("is to team: %#v\n", !c.Disclosed.Valid || !c.Disclosed.Bool)
@@ -238,6 +241,9 @@ func (n *Notifier) NotifyBenchmarkJobFinished(db sqlx.Ext, job *BenchmarkJob) er
 			notificationPB.Id = notification.ID
 			notificationPB.CreatedAt = timestamppb.New(notification.CreatedAt)
 			for _, info := range infos {
+				if info.ContestantID != contestant.ID {
+					continue
+				}
 				err = SendWebPush(n.options.VAPIDPrivateKey, n.options.VAPIDPublicKey, notificationPB, &info)
 				if err != nil {
 					fmt.Printf("err in sendwebpush: %v\n", err)
