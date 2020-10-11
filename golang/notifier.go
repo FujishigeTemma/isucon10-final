@@ -152,7 +152,7 @@ func (n *Notifier) NotifyClarificationAnswered(db sqlx.Ext, c *Clarification, up
 	// TODO: JOINでとれる
 	fmt.Printf("ids: %#v\n", ids)
 	infoMap, err := getTargetsMapFromIDs(db, ids)
-	fmt.Printf("ids: %#v\n", ids)
+	fmt.Printf("ids: %#v\n", infoMap)
 	if err != nil {
 		return err
 	}
