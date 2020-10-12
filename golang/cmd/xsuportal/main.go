@@ -205,7 +205,7 @@ func (*AdminService) Initialize(e echo.Context) error {
 }
 
 func getTeams(teamIDs []int64) (map[int64]xsuportal.Team, error) {
-	sql, params, err  := sqlx.In(
+	sql, params, err := sqlx.In(
 		"SELECT * FROM `teams` WHERE `id` IN (?)",
 		teamIDs,
 	)
@@ -669,7 +669,7 @@ func (*ContestantService) ListNotifications(e echo.Context) error {
 	// }
 	ns, err := makeNotificationsPB([]*xsuportal.Notification{})
 	return writeProto(e, http.StatusOK, &contestantpb.ListNotificationsResponse{
-		Notifications:             		ns,
+		Notifications:               ns,
 		LastAnsweredClarificationId: 0,
 	})
 }

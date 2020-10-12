@@ -144,7 +144,7 @@ func (n *Notifier) NotifyClarificationAnswered(db sqlx.Ext, c *Clarification, up
 			c.TeamID,
 		)
 		if err != nil {
-			fmt.Printf("select contestants(team_id=%v): %#v\n", c.TeamID, err) 
+			fmt.Printf("select contestants(team_id=%v): %#v\n", c.TeamID, err)
 			return fmt.Errorf("select contestants(team_id=%v): %w", c.TeamID, err)
 		}
 	}
@@ -158,11 +158,7 @@ func (n *Notifier) NotifyClarificationAnswered(db sqlx.Ext, c *Clarification, up
 	if err != nil {
 		return err
 	}
-	if !c.Disclosed.Valid || !c.Disclosed.Bool {
-		fmt.Println("this request has targeted team")
-		fmt.Printf("ids: %#v\n", ids)
-		fmt.Printf("map: %#v\n", infos)
-	}
+
 	for _, contestant := range contestants {
 		notificationPB := &resources.Notification{
 			Content: &resources.Notification_ContentClarification{
