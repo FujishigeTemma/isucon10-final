@@ -33,6 +33,8 @@ func (n *Notifier) VAPIDKey() *webpush.Options {
 	if n.options == nil {
 		pemBytes, err := ioutil.ReadFile(WebpushVAPIDPrivateKeyPath)
 		if err != nil {
+			fmt.Println("read file error")
+			fmt.Println(err)
 			return nil
 		}
 		block, _ := pem.Decode(pemBytes)
@@ -54,6 +56,70 @@ func (n *Notifier) VAPIDKey() *webpush.Options {
 		}
 	}
 	return n.options
+}
+
+func SendWebPush(vapidPrivateKey, vapidPublicKey string, notificationPB *resources.Notification, pushSubscription *PushSubscription) error {
+	b, err := proto.Marshal(notificationPB)
+	if err != nil {
+		return fmt.Errorf("marshal notification: %w", err)
+	}
+	message := make([]byte, base64.StdEncoding.EncodedLen(len(b)))
+	base64.StdEncoding.Encode(message, b)
+
+	resp, err := webpush.SendNotification(
+		message,
+		&webpush.Subscription{
+			Endpoint: pushSubscription.Endpoint,
+			Keys: webpush.Keys{
+				Auth:   pushSubscription.Auth,
+				P256dh: pushSubscription.P256DH,
+			},
+		},
+		&webpush.Options{
+			Subscriber:      WebpushSubject,
+			VAPIDPublicKey:  vapidPublicKey,
+			VAPIDPrivateKey: vapidPrivateKey,
+		},
+	)
+	if err != nil {
+		fmt.Println(err)
+		return fmt.Errorf("send notification: %w", err)
+	}
+	defer resp.Body.Close()
+	expired := resp.StatusCode == 410
+	if expired {
+		fmt.Println(err)
+		return fmt.Errorf("expired notification")
+	}
+	invalid := resp.StatusCode == 404
+	if invalid {
+		fmt.Println(err)
+		return fmt.Errorf("invalid notification")
+	}
+	return nil
+}
+
+func getTargetsMapFromIDs(db sqlx.Ext, ids []string) ([]PushSubscription, error) {
+	inQuery, inArgs, err := sqlx.In("SELECT * FROM `push_subscriptions` WHERE `contestant_id` IN (?)", ids)
+	if err != nil {
+		fmt.Println("error in constructing query in getTargetsFromIDs")
+		fmt.Printf("%#v", err)
+		return nil, err
+	}
+	targetInfos := []PushSubscription{}
+	err = sqlx.Select(
+		db,
+		&targetInfos,
+		inQuery, inArgs...,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("select all contestants: %w", err)
+	}
+	res := []PushSubscription{}
+	for _, t := range targetInfos {
+		res = append(res, t)
+	}
+	return res, nil
 }
 
 func (n *Notifier) NotifyClarificationAnswered(db sqlx.Ext, c *Clarification, updated bool) error {
@@ -78,9 +144,21 @@ func (n *Notifier) NotifyClarificationAnswered(db sqlx.Ext, c *Clarification, up
 			c.TeamID,
 		)
 		if err != nil {
+			fmt.Printf("select contestants(team_id=%v): %#v\n", c.TeamID, err)
 			return fmt.Errorf("select contestants(team_id=%v): %w", c.TeamID, err)
 		}
 	}
+
+	ids := []string{}
+	for _, c := range contestants {
+		ids = append(ids, c.ID)
+	}
+	// TODO: JOINでとれる
+	infos, err := getTargetsMapFromIDs(db, ids)
+	if err != nil {
+		return err
+	}
+
 	for _, contestant := range contestants {
 		notificationPB := &resources.Notification{
 			Content: &resources.Notification_ContentClarification{
@@ -95,16 +173,26 @@ func (n *Notifier) NotifyClarificationAnswered(db sqlx.Ext, c *Clarification, up
 		if err != nil {
 			return fmt.Errorf("notify: %w", err)
 		}
-		if n.VAPIDKey() != nil {
+		if n.options != nil {
 			notificationPB.Id = notification.ID
 			notificationPB.CreatedAt = timestamppb.New(notification.CreatedAt)
-			// TODO: Web Push IIKANJI NI SHITE
+			for _, info := range infos {
+				if info.ContestantID != contestant.ID {
+					continue
+				}
+				err = SendWebPush(n.options.VAPIDPrivateKey, n.options.VAPIDPublicKey, notificationPB, &info)
+				if err != nil {
+					fmt.Printf("is to team: %#v\n", !c.Disclosed.Valid || !c.Disclosed.Bool)
+					fmt.Printf("err in sendwebpush: %v\n", err)
+				}
+			}
 		}
 	}
 	return nil
 }
 
 func (n *Notifier) NotifyBenchmarkJobFinished(db sqlx.Ext, job *BenchmarkJob) error {
+	fmt.Println("start webpush (bench)")
 	var contestants []struct {
 		ID     string `db:"id"`
 		TeamID int64  `db:"team_id"`
@@ -116,8 +204,22 @@ func (n *Notifier) NotifyBenchmarkJobFinished(db sqlx.Ext, job *BenchmarkJob) er
 		job.TeamID,
 	)
 	if err != nil {
+		fmt.Printf("select contestants(team_id=%v): %#v\n", job.TeamID, err)
 		return fmt.Errorf("select contestants(team_id=%v): %w", job.TeamID, err)
 	}
+	ids := []string{}
+	for _, c := range contestants {
+		ids = append(ids, c.ID)
+	}
+	// TODO: JOINでとれる
+	infos, err := getTargetsMapFromIDs(db, ids)
+	if err != nil {
+		fmt.Println("error in getTargetsMapFromIDs")
+		fmt.Println(err)
+		return err
+	}
+	fmt.Printf("ids: %#v\n", ids)
+	fmt.Printf("map: %#v\n", infos)
 	for _, contestant := range contestants {
 		notificationPB := &resources.Notification{
 			Content: &resources.Notification_ContentBenchmarkJob{
@@ -128,12 +230,21 @@ func (n *Notifier) NotifyBenchmarkJobFinished(db sqlx.Ext, job *BenchmarkJob) er
 		}
 		notification, err := n.notify(db, notificationPB, contestant.ID)
 		if err != nil {
+			fmt.Println(err)
 			return fmt.Errorf("notify: %w", err)
 		}
-		if n.VAPIDKey() != nil {
+		if n.options != nil {
 			notificationPB.Id = notification.ID
 			notificationPB.CreatedAt = timestamppb.New(notification.CreatedAt)
-			// TODO: Web Push IIKANJI NI SHITE
+			for _, info := range infos {
+				if info.ContestantID != contestant.ID {
+					continue
+				}
+				err = SendWebPush(n.options.VAPIDPrivateKey, n.options.VAPIDPublicKey, notificationPB, &info)
+				if err != nil {
+					fmt.Printf("err in sendwebpush: %v\n", err)
+				}
+			}
 		}
 	}
 	return nil
@@ -146,7 +257,7 @@ func (n *Notifier) notify(db sqlx.Ext, notificationPB *resources.Notification, c
 	}
 	encodedMessage := base64.StdEncoding.EncodeToString(m)
 	res, err := db.Exec(
-		"INSERT INTO `notifications` (`contestant_id`, `encoded_message`, `read`, `created_at`, `updated_at`) VALUES (?, ?, FALSE, NOW(6), NOW(6))",
+		"INSERT INTO `notifications` (`contestant_id`, `encoded_message`, `read`, `created_at`, `updated_at`) VALUES (?, ?, TRUE, NOW(6), NOW(6))",
 		contestantID,
 		encodedMessage,
 	)
@@ -154,6 +265,7 @@ func (n *Notifier) notify(db sqlx.Ext, notificationPB *resources.Notification, c
 		return nil, fmt.Errorf("insert notification: %w", err)
 	}
 	lastInsertID, _ := res.LastInsertId()
+	// notification := Notification{}
 	var notification Notification
 	err = sqlx.Get(
 		db,
@@ -166,5 +278,3 @@ func (n *Notifier) notify(db sqlx.Ext, notificationPB *resources.Notification, c
 	}
 	return &notification, nil
 }
-
-

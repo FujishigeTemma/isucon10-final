@@ -40,7 +40,7 @@ import (
 
 const (
 	// TODO: これをあげることで負荷をあげられる、300でボーナス倍率が2倍になる
-	TeamCapacity               = 73
+	TeamCapacity               = 50
 	AdminID                    = "admin"
 	AdminPassword              = "admin"
 	DebugContestStatusFilePath = "/tmp/XSUPORTAL_CONTEST_STATUS"
@@ -61,6 +61,8 @@ func main() {
 	srv.HideBanner = true
 
 	srv.Binder = ProtoBinder{}
+
+	notifier = xsuportal.Notifier{}
 
 	db, _ = xsuportal.GetDB()
 
@@ -203,7 +205,7 @@ func (*AdminService) Initialize(e echo.Context) error {
 }
 
 func getTeams(teamIDs []int64) (map[int64]xsuportal.Team, error) {
-	sql, params, err  := sqlx.In(
+	sql, params, err := sqlx.In(
 		"SELECT * FROM `teams` WHERE `id` IN (?)",
 		teamIDs,
 	)
@@ -642,67 +644,33 @@ func (*ContestantService) ListNotifications(e echo.Context) error {
 		return wrapError("check session", err)
 	}
 
-	afterStr := e.QueryParam("after")
+	// tx, err := db.Beginx()
+	// if err != nil {
+	// 	return fmt.Errorf("begin tx: %w", err)
+	// }
+	// defer tx.Rollback()
 
-	tx, err := db.Beginx()
-	if err != nil {
-		return fmt.Errorf("begin tx: %w", err)
-	}
-	defer tx.Rollback()
+	// if err != nil {
+	// 	return fmt.Errorf("update notifications: %w", err)
+	// }
+	// if err := tx.Commit(); err != nil {
+	// 	return fmt.Errorf("commit tx: %w", err)
+	// }
+	// team, _ := getCurrentTeam(e, db, false)
 
-	var notifications []*xsuportal.Notification
-	if afterStr != "" {
-		after, err := strconv.Atoi(afterStr)
-		if err != nil {
-			return fmt.Errorf("parse after: %w", err)
-		}
-		err = tx.Select(
-			&notifications,
-			"SELECT * FROM `notifications` WHERE `contestant_id` = ? AND `id` > ? ORDER BY `id`",
-			contestant.ID,
-			after,
-		)
-		if err != sql.ErrNoRows && err != nil {
-			return fmt.Errorf("select notifications(after=%v): %w", after, err)
-		}
-	} else {
-		err = tx.Select(
-			&notifications,
-			"SELECT * FROM `notifications` WHERE `contestant_id` = ? ORDER BY `id`",
-			contestant.ID,
-		)
-		if err != sql.ErrNoRows && err != nil {
-			return fmt.Errorf("select notifications: %w", err)
-		}
-	}
-	_, err = tx.Exec(
-		"UPDATE `notifications` SET `read` = TRUE WHERE `contestant_id` = ? AND `read` = FALSE",
-		contestant.ID,
-	)
-	if err != nil {
-		return fmt.Errorf("update notifications: %w", err)
-	}
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit tx: %w", err)
-	}
-	team, _ := getCurrentTeam(e, db, false)
-
-	var lastAnsweredClarificationID int64
-	err = db.Get(
-		&lastAnsweredClarificationID,
-		"SELECT `id` FROM `clarifications` WHERE (`team_id` = ? OR `disclosed` = TRUE) AND `answered_at` IS NOT NULL ORDER BY `id` DESC LIMIT 1",
-		team.ID,
-	)
-	if err != sql.ErrNoRows && err != nil {
-		return fmt.Errorf("get last answered clarification: %w", err)
-	}
-	ns, err := makeNotificationsPB(notifications)
-	if err != nil {
-		return fmt.Errorf("make notifications: %w", err)
-	}
+	// var lastAnsweredClarificationID int64
+	// err = db.Get(
+	// 	&lastAnsweredClarificationID,
+	// 	"SELECT `id` FROM `clarifications` WHERE (`team_id` = ? OR `disclosed` = TRUE) AND `answered_at` IS NOT NULL ORDER BY `id` DESC LIMIT 1",
+	// 	team.ID,
+	// )
+	// if err != sql.ErrNoRows && err != nil {
+	// 	return fmt.Errorf("get last answered clarification: %w", err)
+	// }
+	ns, err := makeNotificationsPB([]*xsuportal.Notification{})
 	return writeProto(e, http.StatusOK, &contestantpb.ListNotificationsResponse{
 		Notifications:               ns,
-		LastAnsweredClarificationId: lastAnsweredClarificationID,
+		LastAnsweredClarificationId: 0,
 	})
 }
 
